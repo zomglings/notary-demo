@@ -2,5 +2,29 @@
 name = "prover"
 version = "0.1.0"
 edition = "2024"
+authors = ["ChatGPT", "Claude", "Cursor", "zomglings"]
 
 [dependencies]
+tokio = { version = "1.35.1", features = ["full"] }
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+uuid = { version = "1.6.1", features = ["v4", "serde"] }
+thiserror = "1.0.50"
+clap = { version = "4.5.5", features = ["derive"] }
+env_logger = "0.10.1"
+log = "0.4.20"
+hyper = { version = "1.1.0", features = ["full"] }
+hyper-util = { version = "0.1.2", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+futures-util = "0.3"
+eyre = "0.6"
+bytes = "1.5.0"
+http-body-util = "0.1.0"
+http = "1.0.0"
+rustls = "0.21"
+rustls-native-certs = "0.6.3"
+
+# TLSNotary dependencies
+tlsn-core = { git = "https://github.com/tlsnotary/tlsn.git", package = "tlsn-core" }
+tlsn-common = { git = "https://github.com/tlsnotary/tlsn.git", package = "tlsn-common" }
+tlsn-prover = { git = "https://github.com/tlsnotary/tlsn.git", package = "tlsn-prover" }
