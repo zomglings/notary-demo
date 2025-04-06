@@ -1,6 +1,7 @@
 use notary::api::ApiServer;
 use notary::cli::{Cli, Commands};
 use notary::db::{Database, DatabaseError};
+use notary::tlsn_service::TlsnService;
 use std::net::TcpListener;
 use std::path::Path;
 
@@ -60,16 +61,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let proofs = database.list_all_proofs()?;
             log::info!("Found {} existing notarized proofs", proofs.len());
             
+            // Start the TLSNotary service in a separate task
+            let notary_host = host.clone();
+            let notary_database = database.clone();
+            tokio::spawn(async move {
+                let tlsn_service = TlsnService::new(notary_host, notary_port, notary_database);
+                if let Err(e) = tlsn_service.run().await {
+                    log::error!("TLSNotary service error: {}", e);
+                }
+            });
+            log::info!("TLSNotary service started on {}:{}", host, notary_port);
+            
             // Start the API server
             let api_address = format!("{}:{}", host, api_port);
             log::info!("Starting API server on: {}", api_address);
             
-            // Start the notary MPC server (placeholder for now)
-            let notary_address = format!("{}:{}", host, notary_port);
-            log::info!("Starting notary MPC protocol on: {}", notary_address);
-            
-            // For now, we just start the API server
-            // In the future, we'll start the notary MPC server as well
             let listener = TcpListener::bind(&api_address)?;
             let server = ApiServer::new(listener, database).await?;
             

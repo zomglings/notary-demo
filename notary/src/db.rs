@@ -33,6 +33,7 @@ pub struct NotarizedProof {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Clone)]
 pub struct Database {
     pool: Pool<SqliteConnectionManager>,
 }
