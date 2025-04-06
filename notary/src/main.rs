@@ -5,8 +5,20 @@ use std::path::Path;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+    // Initialize logging with a more detailed format
+    // Format: time level module message 
+    if std::env::var("RUST_LOG").is_err() {
+        // Safe as we're just configuring the logger environment variable
+        unsafe { std::env::set_var("RUST_LOG", "info"); }
+    }
+    
+    env_logger::builder()
+        .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
+        .format_module_path(true)
+        .init();
+    
+    log::info!("Logger initialized with HTTP request logging enabled");
+    log::info!("Request format: IP 'METHOD /path HTTP/x.x' STATUS BYTES 'REFERER' 'USER-AGENT' TIME");
     
     // Initialize database
     let db_path = "notary_proofs.db";

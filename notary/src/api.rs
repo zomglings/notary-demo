@@ -1,10 +1,10 @@
 use crate::db::{Database, DatabaseError};
 use actix_cors::Cors;
 use actix_web::{
-    dev::Server,
+    dev::{Server, ServiceResponse},
     get, post,
     web::{self, Data, Json, Path},
-    App, HttpResponse, HttpServer, Responder,
+    App, HttpResponse, HttpServer, Responder, middleware::Logger,
 };
 use serde::{Deserialize, Serialize};
 use std::net::TcpListener;
@@ -61,6 +61,7 @@ impl ApiServer {
 
             App::new()
                 .wrap(cors)
+                .wrap(Logger::new("%a '%r' %s %b '%{Referer}i' '%{User-Agent}i' %T"))
                 .app_data(db.clone())
                 .service(submit_proof)
                 .service(get_all_proofs)
