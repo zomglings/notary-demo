@@ -15,12 +15,6 @@ pub struct ApiServer {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ProofSubmission {
-    tls_domain: String,
-    proof_json: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct ProofIdResponse {
     id: String,
 }
@@ -63,7 +57,6 @@ impl ApiServer {
                 .wrap(cors)
                 .wrap(Logger::new("%a '%r' %s %b '%{Referer}i' '%{User-Agent}i' %T"))
                 .app_data(db.clone())
-                .service(submit_proof)
                 .service(get_all_proofs)
                 .service(get_proof_by_id)
                 .service(verify_proof)
@@ -79,21 +72,6 @@ impl ApiServer {
     }
 }
 
-#[post("/proofs")]
-async fn submit_proof(
-    db: web::Data<Arc<Database>>,
-    proof: Json<ProofSubmission>,
-) -> impl Responder {
-    let result = db.insert_proof(&proof.tls_domain, &proof.proof_json);
-
-    match result {
-        Ok(id) => HttpResponse::Created().json(ProofIdResponse { id }),
-        Err(e) => {
-            log::error!("Failed to insert proof: {:?}", e);
-            HttpResponse::InternalServerError().body(format!("Failed to insert proof: {}", e))
-        }
-    }
-}
 
 #[get("/proofs")]
 async fn get_all_proofs(db: web::Data<Arc<Database>>) -> impl Responder {
