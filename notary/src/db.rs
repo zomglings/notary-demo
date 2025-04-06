@@ -13,6 +13,7 @@ pub enum DatabaseError {
     SerializationError(#[from] serde_json::Error),
     
     #[error("Proof with ID {0} not found")]
+    #[allow(dead_code)]
     ProofNotFound(String),
     
     #[error("Invalid date format in database: {0}")]
@@ -66,6 +67,7 @@ impl Database {
         Ok(Self { conn })
     }
     
+    #[allow(dead_code)]
     pub fn insert_proof(&self, tls_domain: &str, proof_json: &str) -> Result<String, DatabaseError> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -78,6 +80,7 @@ impl Database {
         Ok(id)
     }
     
+    #[allow(dead_code)]
     pub fn get_proof_by_id(&self, id: &str) -> Result<NotarizedProof, DatabaseError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, tls_domain, proof_json, created_at FROM notarized_proofs WHERE id = ?1",

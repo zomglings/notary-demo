@@ -4,7 +4,7 @@ use crate::db::{Database, DatabaseError};
 use std::path::Path;
 
 fn main() -> Result<(), DatabaseError> {
-    // Initialize database
+    // Initialize database in the current directory
     let db_path = "notary_proofs.db";
     
     // Check if database exists and print status
