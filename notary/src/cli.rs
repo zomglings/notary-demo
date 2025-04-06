@@ -83,6 +83,6 @@ pub enum Commands {
 impl Cli {
     /// Parse command-line arguments
     pub fn parse_args() -> Self {
-        Cli::parse()
+        Self::parse()
     }
 } 

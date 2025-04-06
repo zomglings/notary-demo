@@ -22,15 +22,14 @@ log = "0.4.20"
 r2d2 = "0.8.10"
 r2d2_sqlite = "0.23.0"
 clap = { version = "4.5.5", features = ["derive"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+futures-util = "0.3"
+eyre = "0.6"
 
 # TLSNotary dependencies
-tlsn-core = { git = "https://github.com/tlsnotary/tlsn" }
-tlsn-prover = { git = "https://github.com/tlsnotary/tlsn" }
-tlsn-verifier = { git = "https://github.com/tlsnotary/tlsn" }
-notary-server = { git = "https://github.com/tlsnotary/tlsn" }
-notary-client = { git = "https://github.com/tlsnotary/tlsn" }
-tlsn-common = { git = "https://github.com/tlsnotary/tlsn" }
-http-body-util = "0.1.0"
-hyper = { version = "0.14", features = ["server", "tcp", "http1", "client"] }
-hyper-util = { version = "0.1.1", features = ["client", "client-legacy", "tokio"] }
-tokio-util = { version = "0.7.0", features = ["compat"] }
+tlsn-core = { git = "https://github.com/tlsnotary/tlsn.git", package = "tlsn-core" }
+tlsn-common = { git = "https://github.com/tlsnotary/tlsn.git", package = "tlsn-common" }
+tlsn-verifier = { git = "https://github.com/tlsnotary/tlsn.git", package = "tlsn-verifier" }
+notary-server = { git = "https://github.com/tlsnotary/tlsn.git", package = "notary-server" }
+hyper = { version = "1.1.0", features = ["full"] }
+hyper-util = { version = "0.1.2", features = ["full"] }
