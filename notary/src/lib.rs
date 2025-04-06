@@ -1,4 +1,5 @@
 pub mod db;
+pub mod api;
 
 #[cfg(test)]
 mod tests {

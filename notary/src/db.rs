@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OpenFlags};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::{params, OpenFlags};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -18,6 +20,9 @@ pub enum DatabaseError {
     
     #[error("Invalid date format in database: {0}")]
     InvalidDateFormat(String),
+
+    #[error("Connection pool error: {0}")]
+    PoolError(#[from] r2d2::Error),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -29,29 +34,33 @@ pub struct NotarizedProof {
 }
 
 pub struct Database {
-    conn: Connection,
+    pool: Pool<SqliteConnectionManager>,
 }
 
 impl Database {
     pub fn new(db_path: &str) -> Result<Self, DatabaseError> {
-        let conn = if db_path == ":memory:" {
+        let manager = if db_path == ":memory:" {
             // For in-memory databases used in testing
-            Connection::open_in_memory()?
+            SqliteConnectionManager::memory()
         } else {
             // For persistent databases, use WAL mode with normal sync
-            let conn = Connection::open_with_flags(
-                db_path,
-                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-            )?;
-            
-            // Enable WAL mode
-            conn.pragma_update(None, "journal_mode", "WAL")?;
-            
-            // Set normal synchronization mode
-            conn.pragma_update(None, "synchronous", "NORMAL")?;
-            
-            conn
+            let manager = SqliteConnectionManager::file(db_path)
+                .with_flags(OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE);
+            manager
         };
+        
+        let pool = Pool::builder()
+            .max_size(10) // Maximum number of connections in the pool
+            .build(manager)?;
+        
+        // Initialize the database schema
+        let conn = pool.get()?;
+        
+        // Enable WAL mode and normal sync on persistent connections
+        if db_path != ":memory:" {
+            conn.pragma_update(None, "journal_mode", "WAL")?;
+            conn.pragma_update(None, "synchronous", "NORMAL")?;
+        }
         
         // Create the table if it doesn't exist
         conn.execute(
@@ -64,15 +73,16 @@ impl Database {
             [],
         )?;
         
-        Ok(Self { conn })
+        Ok(Self { pool })
     }
     
     #[allow(dead_code)]
     pub fn insert_proof(&self, tls_domain: &str, proof_json: &str) -> Result<String, DatabaseError> {
+        let conn = self.pool.get()?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         
-        self.conn.execute(
+        conn.execute(
             "INSERT INTO notarized_proofs (id, tls_domain, proof_json, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![id, tls_domain, proof_json, now.to_rfc3339()],
         )?;
@@ -82,7 +92,8 @@ impl Database {
     
     #[allow(dead_code)]
     pub fn get_proof_by_id(&self, id: &str) -> Result<NotarizedProof, DatabaseError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
             "SELECT id, tls_domain, proof_json, created_at FROM notarized_proofs WHERE id = ?1",
         )?;
         
@@ -114,7 +125,8 @@ impl Database {
     }
     
     pub fn list_all_proofs(&self) -> Result<Vec<NotarizedProof>, DatabaseError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
             "SELECT id, tls_domain, proof_json, created_at FROM notarized_proofs ORDER BY created_at DESC",
         )?;
         
