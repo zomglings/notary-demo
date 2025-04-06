@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use hyper::{Body, Client, Method, Request, Uri};
 use serde::{Deserialize, Serialize};
-use tokio::time::timeout;
 use uuid::Uuid;
 use chrono::Utc;
 
