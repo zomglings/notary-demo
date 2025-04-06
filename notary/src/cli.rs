@@ -19,11 +19,11 @@ pub enum Commands {
         host: String,
 
         /// Port for the REST API server
-        #[arg(long, default_value = "8080")]
+        #[arg(long, default_value = "7151")]
         api_port: u16,
 
         /// Port for the notary MPC protocol
-        #[arg(long, default_value = "8081")]
+        #[arg(long, default_value = "7150")]
         notary_port: u16,
 
         /// Path to the SQLite database file
