@@ -1,7 +1,7 @@
 use crate::db::{Database, DatabaseError};
 use actix_cors::Cors;
 use actix_web::{
-    dev::{Server, ServiceResponse},
+    dev::Server,
     get, post,
     web::{self, Data, Json, Path},
     App, HttpResponse, HttpServer, Responder, middleware::Logger,
