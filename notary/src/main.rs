@@ -12,7 +12,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Server { 
             host, 
-            port, 
+            api_port,
+            notary_port,
             database, 
             log_level,
             pretty_logging 
@@ -60,10 +61,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             log::info!("Found {} existing notarized proofs", proofs.len());
             
             // Start the API server
-            let address = format!("{}:{}", host, port);
-            log::info!("Starting notary server on: {}", address);
+            let api_address = format!("{}:{}", host, api_port);
+            log::info!("Starting API server on: {}", api_address);
             
-            let listener = TcpListener::bind(&address)?;
+            // Start the notary MPC server (placeholder for now)
+            let notary_address = format!("{}:{}", host, notary_port);
+            log::info!("Starting notary MPC protocol on: {}", notary_address);
+            
+            // For now, we just start the API server
+            // In the future, we'll start the notary MPC server as well
+            let listener = TcpListener::bind(&api_address)?;
             let server = ApiServer::new(listener, database).await?;
             
             log::info!("Server started successfully. Press Ctrl+C to stop.");

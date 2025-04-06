@@ -18,9 +18,13 @@ pub enum Commands {
         #[arg(short = 'H', long, default_value = "127.0.0.1")]
         host: String,
 
-        /// Port to listen on
-        #[arg(short, long, default_value = "8080")]
-        port: u16,
+        /// Port for the REST API server
+        #[arg(long, default_value = "8080")]
+        api_port: u16,
+
+        /// Port for the notary MPC protocol
+        #[arg(long, default_value = "8081")]
+        notary_port: u16,
 
         /// Path to the SQLite database file
         #[arg(short, long, default_value = "notary_proofs.db")]
