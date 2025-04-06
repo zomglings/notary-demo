@@ -2,5 +2,15 @@
 name = "notary"
 version = "0.1.0"
 edition = "2024"
+authors = ["ChatGPT", "Claude", "Cursor", "zomglings"]
 
 [dependencies]
+rusqlite = { version = "0.30.0", features = ["bundled"] }
+uuid = { version = "1.6.1", features = ["v4", "serde"] }
+thiserror = "1.0.50"
+tokio = { version = "1.35.1", features = ["full"] }
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+chrono = { version = "0.4.31", features = ["serde"] }
