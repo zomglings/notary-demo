@@ -1,6 +1,4 @@
-mod db;
-
-use crate::db::{Database, DatabaseError};
+use notary::db::{Database, DatabaseError};
 use std::path::Path;
 
 fn main() -> Result<(), DatabaseError> {
