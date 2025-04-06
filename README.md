@@ -1,2 +1,4 @@
-# notary-demo
-TLSNotary demo
+# A TLSNotary demo
+
+[Technical specifications](./spec.md)
+
