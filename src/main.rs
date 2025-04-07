@@ -442,7 +442,7 @@ fn main() {
                         }
                     }
                     
-                    // Call simple_notarize
+                    // Call simple_notarize with the provided method
                     if let Err(err) = rt.block_on(prover::simple_notarize(&url, &method, headers, body, notary_host, notary_port, &outfile)) {
                         eprintln!("Error during simple notarization: {}", err);
                         std::process::exit(1);

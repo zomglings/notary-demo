@@ -572,7 +572,7 @@ pub async fn direct_test(
 /// A simplified notarize function that is an exact copy of direct_test
 pub async fn simple_notarize(
     url: &str,
-    _method: &str,
+    method: &str,
     headers: HashMap<String, String>,
     _body: Option<String>,
     _notary_host: Option<String>,
@@ -695,6 +695,12 @@ pub async fn simple_notarize(
 
     // Build HTTP request using ONLY the headers provided via CLI, with no automatic additions
     let mut request_builder = Request::builder().uri(&uri);
+    
+    // Set the HTTP method from the command line
+    if !method.is_empty() {
+        println!("Using HTTP method: {}", method);
+        request_builder = request_builder.method(hyper::Method::from_str(method)?);
+    }
     
     // Add ONLY the headers from CLI - no default/essential headers
     for (key, value) in &headers {
