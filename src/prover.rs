@@ -706,25 +706,29 @@ pub async fn simple_notarize(
     // Spawn the HTTP task to be run concurrently in the background.
     tokio::spawn(connection);
 
-    // Build a simple HTTP request with common headers
-    let mut request_builder = Request::builder()
-        .uri(&uri)
-        .header("Host", SERVER_DOMAIN)
-        .header("Accept", "*/*")
-        // Using "identity" instructs the Server not to use compression for its HTTP response.
-        // TLSNotary tooling does not support compression.
-        .header("Accept-Encoding", "identity")
-        .header("Connection", "close")
-        .header("User-Agent", USER_AGENT);
-        
-    // Add custom headers
-    let reserved_headers = ["host", "accept", "accept-encoding", "connection", "user-agent"];
-    for (key, value) in headers {
-        if !reserved_headers.contains(&key.to_lowercase().as_str()) {
-            println!("Adding custom header: {}:{}", key, value);
-            request_builder = request_builder.header(&key, &value);
-        } else {
-            println!("Skipping reserved header: {}:{}", key, value);
+    // Build HTTP request using only provided headers
+    let mut request_builder = Request::builder().uri(&uri);
+    
+    // Set of essential headers and their default values
+    let essential_headers = [
+        ("host", SERVER_DOMAIN),
+        ("accept", "*/*"),
+        ("accept-encoding", "identity"), // identity = no compression (required for TLSNotary)
+        ("connection", "close"),
+        ("user-agent", USER_AGENT)
+    ];
+    
+    // Add headers from CLI first, then add any missing essential headers
+    for (key, value) in &headers {
+        println!("Adding provided header: {}:{}", key, value);
+        request_builder = request_builder.header(key, value);
+    }
+    
+    // Check if any essential headers are missing and add them
+    for (name, default_value) in essential_headers {
+        if !headers.iter().any(|(k, _)| k.to_lowercase() == name) {
+            println!("Adding essential header: {}:{}", name, default_value);
+            request_builder = request_builder.header(name, default_value);
         }
     }
 
