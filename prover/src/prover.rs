@@ -9,14 +9,12 @@ use log::{debug, info, warn, error};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr, str::FromStr};
 
-use notary_client::{NotaryClient, NotarizationRequest, Accepted};
 use tlsn_common::config::ProtocolConfig;
-use tlsn_core::{transcript::Idx, CryptoProvider, request::RequestConfig, transcript::TranscriptCommitConfig};
-use tlsn_formats::http::{DefaultHttpCommitter, HttpTranscript, BodyContent};
+use tlsn_core::transcript::Idx;
+use tlsn_core::CryptoProvider;
 use tlsn_prover::{state::Prove, Prover, ProverConfig};
 use tokio::net::TcpStream;
 use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
-use hex;
 
 // Constants
 const MAX_SENT_DATA: usize = 1 << 16; // 64KB
@@ -128,9 +126,20 @@ impl TlsnProver {
             .ok_or_else(|| {
                 ProverError::RequestError("Failed to resolve hostname".to_string())
             })?;
+            
+        // Connect to notary
+        info!("FLOW: [1/10] Connecting to notary at {}:{}", self.notary_host, self.notary_port);
+        let notary_addr = SocketAddr::from(([127, 0, 0, 1], self.notary_port));
+        let notary_socket = TcpStream::connect(notary_addr)
+            .await
+            .map_err(|e| {
+                ProverError::TlsnConnectionError(format!(
+                    "Failed to connect to notary: {}", e
+                ))
+            })?;
         
         // Fetch MPC parameters from the notary API first to better configure our request
-        info!("FLOW: [1/10] Fetching MPC parameters from notary API");
+        info!("FLOW: [2/10] Fetching MPC parameters from notary API");
         let mpc_params = match fetch_mpc_params(&self.notary_host, self.notary_api_port).await {
             Ok(params) => {
                 info!("Successfully fetched MPC parameters from notary API");
@@ -149,43 +158,11 @@ impl TlsnProver {
                 }
             }
         };
-        
-        // STEP 1: Build client to connect to notary server
-        info!("FLOW: [2/10] Building notary client");
-        let notary_client = NotaryClient::builder()
-            .host(&self.notary_host)
-            .port(self.notary_port)
-            // Local notary doesn't need TLS
-            .enable_tls(false)
-            .build()
-            .map_err(|e| ProverError::ConfigError(format!("Failed to build notary client: {}", e)))?;
-            
-        // STEP 2: Send notarization request
-        info!("FLOW: [3/10] Creating notarization request");
-        let notarization_request = NotarizationRequest::builder()
-            .max_sent_data(mpc_params.max_sent_data)
-            .max_recv_data(mpc_params.max_recv_data)
-            .build()
-            .map_err(|e| ProverError::ConfigError(format!("Failed to build notarization request: {}", e)))?;
-            
-        // STEP 3: Request notarization
-        info!("FLOW: [4/10] Requesting notarization from notary server");
-        let Accepted {
-            io: notary_connection,
-            id: session_id,
-            ..
-        } = notary_client
-            .request_notarization(notarization_request)
-            .await
-            .map_err(|e| ProverError::TlsnConnectionError(format!("Failed to connect to notary: {}", e)))?;
-            
-        info!("Successfully established notarization session with ID: {}", session_id);
-        
-        // STEP 4: Set up prover configuration
-        info!("FLOW: [5/10] Setting up TLSNotary prover configuration");
+                
+        // Setup prover configuration with fetched parameters
+        info!("FLOW: [3/10] Setting up TLSNotary prover configuration");
         info!("Protocol settings: max_sent_data={}, max_recv_data={}", 
                mpc_params.max_sent_data, mpc_params.max_recv_data);
-               
         let prover_config = ProverConfig::builder()
             .server_name(server_domain)
             .protocol_config(
@@ -204,10 +181,14 @@ impl TlsnProver {
                 error!("CONFIG ERROR: Failed to build prover config: {}", e);
                 ProverError::ConfigError(format!("Failed to build prover config: {}", e))
             })?;
-            
-        // STEP 5: Create prover and perform necessary setup
-        info!("FLOW: [6/10] Creating prover and performing setup");
-        let prover = match Prover::new(prover_config).setup(notary_connection.compat()).await {
+        
+        // Create prover
+        info!("FLOW: [4/10] Creating prover instance");
+        let prover = Prover::new(prover_config);
+        
+        // Perform the setup phase with the notary
+        info!("FLOW: [5/10] Starting TLSNotary setup phase with notary");
+        let prover = match prover.setup(notary_socket.compat()).await {
             Ok(p) => {
                 info!("Setup phase completed successfully");
                 p
@@ -219,8 +200,8 @@ impl TlsnProver {
             }
         };
         
-        // STEP 6: Connect to the target server
-        info!("FLOW: [7/10] Connecting to target server: {}", server_addr);
+        // Connect to the TLS server
+        info!("FLOW: [6/10] Connecting to target server: {}", server_addr);
         let client_socket = match TcpStream::connect(socket_addr).await {
             Ok(socket) => {
                 info!("Successfully connected to target server: {}", server_addr);
@@ -232,9 +213,9 @@ impl TlsnProver {
             }
         };
         
-        // STEP 7: Bind prover to server connection
-        info!("FLOW: [8/10] Establishing MPC TLS connection to target server");
-        let (mpc_tls_connection, prover_fut) = match prover.connect(client_socket.compat()).await {
+        // Pass server connection into the prover and get the MPC TLS connection back
+        info!("FLOW: [7/10] Establishing MPC TLS connection to target server");
+        let (mpc_tls_connection, prover_future) = match prover.connect(client_socket.compat()).await {
             Ok(result) => {
                 info!("Successfully established MPC TLS connection to target server");
                 result
@@ -249,12 +230,15 @@ impl TlsnProver {
         };
         
         // Wrap the connection for use with hyper
+        info!("FLOW: [8/10] Preparing HTTP connection through MPC TLS");
         let mpc_tls_connection = TokioIo::new(mpc_tls_connection.compat());
         
-        // Spawn the prover task to run in the background
-        let prover_task = tokio::spawn(prover_fut);
+        // Spawn the prover to run in the background
+        info!("Spawning prover future as background task");
+        let prover_task = tokio::spawn(prover_future);
         
-        // Attach hyper HTTP client to the connection
+        // Setup HTTP client
+        info!("FLOW: [9/10] Performing HTTP handshake through MPC TLS connection");
         let (mut request_sender, connection) = match hyper::client::conn::http1::handshake(mpc_tls_connection).await {
             Ok(result) => {
                 info!("HTTP handshake successful");
@@ -266,10 +250,11 @@ impl TlsnProver {
             }
         };
         
-        // Spawn the HTTP task to be run in the background
+        // Spawn the connection
+        info!("Spawning HTTP connection as background task");
         tokio::spawn(connection);
         
-        // Build the request with proper headers for TLSNotary
+        // Build the request
         let mut request_builder = Request::builder()
             .uri(uri.clone())
             .method(method.as_str())
@@ -308,7 +293,7 @@ impl TlsnProver {
             .map_err(|e| ProverError::RequestError(format!("Failed to build request: {}", e)))?;
         
         // Send the request and wait for response
-        info!("FLOW: [9/10] Sending {} request to {}", method, url);
+        info!("FLOW: [10/10] Sending {} request to {}", method, url);
         let response = request_sender
             .send_request(request)
             .await
@@ -318,7 +303,7 @@ impl TlsnProver {
         let status = response.status();
         info!("Received response with status: {}", status);
         
-        // Wait for the prover task to complete
+        // Await the prover task to complete
         let prover = prover_task
             .await
             .map_err(|e| {
@@ -328,73 +313,40 @@ impl TlsnProver {
                 ProverError::TlsnProtocolError(format!("Prover connection failed: {}", e))
             })?;
         
-        // STEP 10: Prepare for notarization
-        info!("FLOW: [10/10] Preparing notarization");
-        let mut prover = prover.start_notarize();
-        
-        // Parse the HTTP transcript
-        let transcript = match HttpTranscript::parse(prover.transcript()) {
-            Ok(t) => {
-                info!("Successfully parsed HTTP transcript");
-                t
-            },
-            Err(e) => {
-                error!("TRANSCRIPT ERROR: Failed to parse transcript: {}", e);
-                return Err(ProverError::TlsnProtocolError(format!("Failed to parse transcript: {}", e)));
-            }
-        };
-        
-        // Log transcript information for debugging
-        if let Some(body) = transcript.responses.first().and_then(|r| r.body.as_ref()) {
-            match &body.content {
-                BodyContent::Json(_) => {
-                    info!("Response contains JSON content");
-                }
-                BodyContent::Html(_) => {
-                    info!("Response contains HTML content");
-                }
-                _ => {
-                    info!("Response contains unknown content type");
-                }
-            }
-        }
+        // Start proving
+        let mut prover = prover.start_prove();
         
         // Apply selective disclosure if requested
-        let builder = if let Some(disclosure_options) = selective_disclosure {
+        let (sent_ids, recv_ids) = if let Some(disclosure_options) = selective_disclosure {
             info!("Applying selective disclosure rules");
-            self.apply_selective_disclosure_to_transcript(&mut prover, &transcript, disclosure_options)?
+            self.apply_selective_disclosure(&mut prover, disclosure_options)?
         } else {
-            // By default, commit entire transcript
-            info!("No selective disclosure specified, committing entire transcript");
-            let mut builder = TranscriptCommitConfig::builder(prover.transcript());
-            DefaultHttpCommitter::default().commit_transcript(&mut builder, &transcript)
-                .map_err(|e| ProverError::TlsnProtocolError(format!("Failed to commit transcript: {}", e)))?;
-            builder
+            // By default, reveal everything
+            debug!("No selective disclosure specified, revealing everything");
+            let sent_transcript = prover.transcript().sent();
+            let recv_transcript = prover.transcript().received();
+            let sent_len = sent_transcript.len();
+            let recv_len = recv_transcript.len();
+            // Create a range that reveals everything (0 to length)
+            (Idx::new([0..sent_len]), Idx::new([0..recv_len]))
         };
         
-        // Commit to the transcript
-        prover.transcript_commit(builder.build()
-            .map_err(|e| ProverError::TlsnProtocolError(format!("Failed to build transcript config: {}", e)))?);
+        // Create the proof by proving the transcript with the selected disclosure
+        let _proof = prover.prove_transcript(sent_ids, recv_ids)
+            .await
+            .map_err(|e| {
+                ProverError::TlsnProtocolError(format!("Failed to prove transcript: {}", e))
+            })?;
+        
+        // Finalize the proof
+        info!("Finalizing proof");
+        let _notarized_session = prover.finalize()
+            .await
+            .map_err(|e| {
+                ProverError::TlsnProtocolError(format!("Failed to finalize proof: {}", e))
+            })?;
             
-        // Request attestation
-        let request_config = RequestConfig::default();
-        
-        // Finalize notarization
-        info!("Finalizing notarization");
-        let (attestation, secrets) = match prover.finalize(&request_config).await {
-            Ok((a, s)) => {
-                info!("Notarization completed successfully");
-                (a, s)
-            },
-            Err(e) => {
-                error!("FINALIZE ERROR: Failed to finalize: {}", e);
-                return Err(ProverError::TlsnProtocolError(format!("Failed to finalize: {}", e)));
-            }
-        };
-        
-        // For now, we'll just create a simple proof structure rather than using the binary format
-        // In a real implementation, you'd save the attestation and secrets to be verified later
-        info!("Creating proof");
+        // Return the proof in JSON format
         let proof_json = serde_json::json!({
             "notarized": true,
             "url": url,
@@ -406,31 +358,85 @@ impl TlsnProver {
                 .collect::<HashMap<String, String>>(),
             "server": server_domain,
             "timestamp": chrono::Utc::now().to_rfc3339(),
-            "session_id": session_id,
-            "commitment": hex::encode(attestation.commitment()), // Real commitment from attestation
         });
         
         Ok(Proof::new(proof_json))
     }
     
-    fn apply_selective_disclosure_to_transcript(
+    fn apply_selective_disclosure(
         &self,
-        prover: &mut Prover<tlsn_prover::state::Notarize>,
-        transcript: &HttpTranscript,
+        prover: &mut Prover<Prove>,
         disclosure_options: Vec<(String, String)>,
-    ) -> Result<TranscriptCommitConfig, ProverError> {
-        // Create a transcript commit config builder
-        let mut builder = TranscriptCommitConfig::builder(prover.transcript());
+    ) -> Result<(Idx, Idx), ProverError> {
+        // Get the transcripts
+        let sent_transcript = prover.transcript().sent();
+        let recv_transcript = prover.transcript().received();
         
-        // We'll create a custom committer based on disclosure options
-        // For now, as a simple implementation, we'll just commit the entire transcript
-        // In a real implementation, you would selectively commit parts based on disclosure_options
-        DefaultHttpCommitter::default().commit_transcript(&mut builder, transcript)
-            .map_err(|e| ProverError::TlsnProtocolError(format!("Failed to commit transcript: {}", e)))?;
+        // Default to revealing everything
+        let mut sent_reveal = vec![0..sent_transcript.len()];
+        let mut recv_reveal = vec![0..recv_transcript.len()];
+        
+        // Process selective disclosure options
+        for (field, action) in disclosure_options {
+            // Convert action to uppercase for case-insensitive comparison
+            let action = action.to_uppercase();
             
-        // This is a simplified implementation - a real one would parse the disclosure options
-        // and selectively commit parts of the transcript
+            if action != "REVEAL" && action != "REDACT" {
+                return Err(ProverError::ConfigError(format!(
+                    "Invalid selective disclosure action: {}. Must be REVEAL or REDACT",
+                    action
+                )));
+            }
+            
+            // For simplicity of this example, we'll just search for the field in the transcript
+            // and redact/reveal based on that. In a real implementation, you would need to parse
+            // the HTTP request/response and work with structured data.
+            
+            // For request (sent), we'll search for header names and values
+            if let Some(start) = String::from_utf8_lossy(sent_transcript).find(&field) {
+                let end = start + field.len();
+                
+                if action == "REDACT" {
+                    // Remove this range from the reveal list
+                    sent_reveal = sent_reveal
+                        .into_iter()
+                        .flat_map(|range| {
+                            if range.contains(&start) && range.contains(&(end - 1)) {
+                                vec![range.start..start, end..range.end]
+                                    .into_iter()
+                                    .filter(|r| !r.is_empty())
+                                    .collect()
+                            } else {
+                                vec![range]
+                            }
+                        })
+                        .collect();
+                }
+            }
+            
+            // For response (received), we'll search for header names, values, and body content
+            if let Some(start) = String::from_utf8_lossy(recv_transcript).find(&field) {
+                let end = start + field.len();
+                
+                if action == "REDACT" {
+                    // Remove this range from the reveal list
+                    recv_reveal = recv_reveal
+                        .into_iter()
+                        .flat_map(|range| {
+                            if range.contains(&start) && range.contains(&(end - 1)) {
+                                vec![range.start..start, end..range.end]
+                                    .into_iter()
+                                    .filter(|r| !r.is_empty())
+                                    .collect()
+                            } else {
+                                vec![range]
+                            }
+                        })
+                        .collect();
+                }
+            }
+        }
         
-        Ok(builder)
+        Ok((Idx::new(sent_reveal), Idx::new(recv_reveal)))
     }
 }

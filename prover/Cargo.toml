@@ -30,6 +30,4 @@ hex = "0.4"
 tlsn-core = { git = "https://github.com/tlsnotary/tlsn.git", package = "tlsn-core" }
 tlsn-common = { git = "https://github.com/tlsnotary/tlsn.git", package = "tlsn-common" }
 tlsn-prover = { git = "https://github.com/tlsnotary/tlsn.git", package = "tlsn-prover" }
-notary-client = { git = "https://github.com/tlsnotary/tlsn.git", package = "notary-client" }
-tlsn-formats = { git = "https://github.com/tlsnotary/tlsn.git", features = ["http"] }
 bincode = "1.3"

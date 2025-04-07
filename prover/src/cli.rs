@@ -43,7 +43,7 @@ pub enum Commands {
         notary_port: u16,
         
         /// Notary API port for parameter discovery
-        #[arg(long, default_value = "8080")]
+        #[arg(long, default_value = "7151")]
         notary_api_port: u16,
         
         /// Fields to redact or reveal in selective disclosure
