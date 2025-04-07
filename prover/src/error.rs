@@ -3,6 +3,7 @@ use std::fmt;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[allow(dead_code)] // Keeping all error variants for future use
 pub enum ProverError {
     #[error("Failed to connect to TLSNotary server: {0}")]
     TlsnConnectionError(String),

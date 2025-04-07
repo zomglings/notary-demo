@@ -1,6 +1,4 @@
 use clap::{Parser, Subcommand};
-use std::collections::HashMap;
-use std::path::PathBuf;
 
 /// TLSNotary Prover client
 ///

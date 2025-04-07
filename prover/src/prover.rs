@@ -1,8 +1,7 @@
 use crate::error::{Proof, ProverError};
 use bytes::Bytes;
-use futures_util::FutureExt;
 use http_body_util::{BodyExt, Empty};
-use hyper::{Request, StatusCode, Uri};
+use hyper::{Request, Uri};
 use hyper_util::rt::TokioIo;
 use log::{debug, info};
 use std::{collections::HashMap, net::SocketAddr, str::FromStr};
@@ -14,7 +13,8 @@ use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use hex;
 
 // Constants
-const DEFAULT_TIMEOUT_SECS: u64 = 30;
+#[allow(dead_code)]
+const DEFAULT_TIMEOUT_SECS: u64 = 30; // Keeping for future timeout implementations
 const MAX_SENT_DATA: usize = 1 << 16; // 64KB
 const MAX_RECV_DATA: usize = 1 << 20; // 1MB 
 
@@ -100,7 +100,7 @@ impl TlsnProver {
             })?;
         
         // Create prover
-        let mut prover = Prover::new(prover_config);
+        let prover = Prover::new(prover_config);
         
         // Perform the setup phase with the notary
         debug!("Starting TLSNotary setup phase with notary");
@@ -189,7 +189,7 @@ impl TlsnProver {
         info!("Received response with status: {}", status);
         
         // Await the prover task to complete
-        let mut prover = prover_task
+        let prover = prover_task
             .await
             .map_err(|e| {
                 ProverError::TlsnProtocolError(format!("Prover task failed: {}", e))
@@ -217,7 +217,7 @@ impl TlsnProver {
         };
         
         // Create the proof by proving the transcript with the selected disclosure
-        let proof = prover.prove_transcript(sent_ids, recv_ids)
+        let _proof = prover.prove_transcript(sent_ids, recv_ids)
             .await
             .map_err(|e| {
                 ProverError::TlsnProtocolError(format!("Failed to prove transcript: {}", e))
