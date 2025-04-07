@@ -33,7 +33,7 @@ This project uses a hybrid architecture with two servers:
 
 ```bash
 # This single command starts both our API server and the official notary-server
-cargo run --bin notary -- server -H 127.0.0.1 --api-port 7048 --disable-mpc
+cargo run --bin notary -- server -H 127.0.0.1 --api-port 7048 --use-official-notary
 ```
 
 ### 2. Run the Prover Client

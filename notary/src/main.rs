@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             host, 
             api_port,
             notary_port,
-            disable_mpc,
+            use_official_notary,
             database, 
             log_level,
             pretty_logging 
@@ -62,8 +62,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let proofs = database.list_all_proofs()?;
             log::info!("Found {} existing notarized proofs", proofs.len());
             
-            // Start the TLSNotary service in a separate task if not disabled
-            if !disable_mpc && notary_port > 0 {
+            // Start the TLSNotary service in a separate task if not using official notary
+            if !use_official_notary && notary_port > 0 {
                 let notary_host = host.clone();
                 let notary_database = database.clone();
                 tokio::spawn(async move {

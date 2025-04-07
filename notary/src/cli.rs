@@ -26,9 +26,9 @@ pub enum Commands {
         #[arg(long, default_value = "0")]
         notary_port: u16,
         
-        /// Disable custom MPC implementation (use official notary-server instead)
+        /// Use official notary-server implementation instead of our custom MPC
         #[arg(long, default_value = "true")]
-        disable_mpc: bool,
+        use_official_notary: bool,
 
         /// Path to the SQLite database file
         #[arg(short, long, default_value = "notary_proofs.db")]
