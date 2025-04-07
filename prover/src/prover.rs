@@ -1,9 +1,11 @@
 use crate::error::{Proof, ProverError};
 use bytes::Bytes;
-use http_body_util::{BodyExt, Empty};
+use http_body_util::{BodyExt, Empty, Full};
 use hyper::{Request, Uri};
-use hyper_util::rt::TokioIo;
-use log::{debug, info};
+use hyper_util::{rt::{TokioIo, TokioExecutor}, client::legacy::Client as HyperClient};
+use hyper_util::client::legacy::connect::HttpConnector;
+use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr, str::FromStr};
 use tlsn_common::config::ProtocolConfig;
 use tlsn_core::{transcript::Idx, CryptoProvider};
@@ -15,12 +17,24 @@ use hex;
 // Constants
 #[allow(dead_code)]
 const DEFAULT_TIMEOUT_SECS: u64 = 30; // Keeping for future timeout implementations
-const MAX_SENT_DATA: usize = 1 << 16; // 64KB
-const MAX_RECV_DATA: usize = 1 << 20; // 1MB 
+const MAX_SENT_DATA: usize = 1 << 16; // 64KB - Fallback if API unavailable
+const MAX_RECV_DATA: usize = 1 << 20; // 1MB - Fallback if API unavailable
+const DEFAULT_MPC_TIMEOUT_SECS: u64 = 60; // Default MPC timeout - Fallback if API unavailable
+
+/// Structure representing the MPC parameters returned by the notary API
+#[derive(Debug, Serialize, Deserialize)]
+struct MpcParams {
+    max_sent_data: usize,
+    max_recv_data: usize,
+    timeout_seconds: u64,
+    version: String,
+    supported_features: Vec<String>,
+}
 
 pub struct TlsnProver {
     notary_host: String, 
     notary_port: u16,
+    notary_api_port: u16,
 }
 
 /// Creates a default crypto provider for TLSNotary
@@ -28,11 +42,48 @@ fn get_crypto_provider() -> CryptoProvider {
     CryptoProvider::default()
 }
 
+/// Fetches MPC parameters from the notary API
+async fn fetch_mpc_params(host: &str, api_port: u16) -> Result<MpcParams, ProverError> {
+    // Create the client 
+    let http_connector = HttpConnector::new();
+    let client: HyperClient<HttpConnector, Full<Bytes>> = HyperClient::builder(TokioExecutor::new())
+        .build(http_connector);
+    
+    // Build the request URL
+    let url = format!("http://{}:{}/api/mpcparams", host, api_port);
+    let uri = Uri::from_str(&url)
+        .map_err(|e| ProverError::ConfigError(format!("Invalid URL: {}", e)))?;
+    
+    // Create and send the request
+    info!("Fetching MPC parameters from {}", url);
+    let response = client.get(uri)
+        .await
+        .map_err(|e| ProverError::RequestError(format!("Failed to fetch MPC parameters: {}", e)))?;
+    
+    // Check response status
+    if !response.status().is_success() {
+        return Err(ProverError::RequestError(format!(
+            "Failed to fetch MPC parameters, status: {}", 
+            response.status()
+        )));
+    }
+    
+    // Read the response body
+    let body = response.collect().await
+        .map_err(|e| ProverError::RequestError(format!("Failed to read response body: {}", e)))?
+        .to_bytes();
+    
+    // Parse the JSON
+    serde_json::from_slice::<MpcParams>(&body)
+        .map_err(|e| ProverError::ConfigError(format!("Failed to parse MPC parameters: {}", e)))
+}
+
 impl TlsnProver {
-    pub fn new(notary_host: String, notary_port: u16) -> Self {
+    pub fn new(notary_host: String, notary_port: u16, notary_api_port: u16) -> Self {
         Self {
             notary_host,
-            notary_port, 
+            notary_port,
+            notary_api_port,
         }
     }
     
@@ -86,14 +137,35 @@ impl TlsnProver {
                 ))
             })?;
         
-        // Setup prover configuration
+        // Fetch MPC parameters from the notary API
+        // We use a different port for the API (HTTP) vs MPC (raw TCP)
+        let mpc_params = match fetch_mpc_params(&self.notary_host, self.notary_api_port).await {
+            Ok(params) => {
+                info!("Successfully fetched MPC parameters from notary API");
+                debug!("MPC params: max_sent={}, max_recv={}, timeout={}s", 
+                       params.max_sent_data, params.max_recv_data, params.timeout_seconds);
+                params
+            }
+            Err(e) => {
+                warn!("Failed to fetch MPC parameters: {}. Using defaults.", e);
+                MpcParams {
+                    max_sent_data: MAX_SENT_DATA,
+                    max_recv_data: MAX_RECV_DATA,
+                    timeout_seconds: DEFAULT_MPC_TIMEOUT_SECS,
+                    version: "1.0".to_string(),
+                    supported_features: vec!["selective_disclosure".to_string()],
+                }
+            }
+        };
+        
+        // Setup prover configuration with fetched parameters
         debug!("Setting up TLSNotary prover configuration");
         let prover_config = ProverConfig::builder()
             .server_name(server_domain) // Use &str directly, not String
             .protocol_config(
                 ProtocolConfig::builder()
-                    .max_sent_data(MAX_SENT_DATA)
-                    .max_recv_data(MAX_RECV_DATA)
+                    .max_sent_data(mpc_params.max_sent_data)
+                    .max_recv_data(mpc_params.max_recv_data)
                     .build()
                     .map_err(|e| {
                         ProverError::ConfigError(format!("Invalid protocol config: {}", e))

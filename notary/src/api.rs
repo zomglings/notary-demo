@@ -1,4 +1,5 @@
 use crate::db::{Database, DatabaseError};
+use crate::tlsn_service::{MAX_SENT_DATA, MAX_RECV_DATA, MPC_TIMEOUT_SECS, TLSN_VERSION, SUPPORTED_FEATURES};
 use actix_cors::Cors;
 use actix_web::{
     dev::Server,
@@ -38,6 +39,15 @@ pub struct VerificationResponse {
     disclosed_fields: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MpcParams {
+    max_sent_data: usize,
+    max_recv_data: usize,
+    timeout_seconds: u64,
+    version: String,
+    supported_features: Vec<String>,
+}
+
 impl ApiServer {
     pub async fn new(
         listener: TcpListener,
@@ -60,6 +70,7 @@ impl ApiServer {
                 .service(get_all_proofs)
                 .service(get_proof_by_id)
                 .service(verify_proof)
+                .service(get_mpc_params)
         })
         .listen(listener)?
         .run();
@@ -149,6 +160,24 @@ async fn verify_proof(
             HttpResponse::InternalServerError().body(format!("Failed to verify proof: {}", e))
         }
     }
+}
+
+#[get("/api/mpcparams")]
+async fn get_mpc_params() -> impl Responder {
+    // Convert supported_features from &[&str] to Vec<String>
+    let features: Vec<String> = SUPPORTED_FEATURES.iter()
+        .map(|s| s.to_string())
+        .collect();
+        
+    let params = MpcParams {
+        max_sent_data: MAX_SENT_DATA,
+        max_recv_data: MAX_RECV_DATA,
+        timeout_seconds: MPC_TIMEOUT_SECS,
+        version: TLSN_VERSION.to_string(),
+        supported_features: features,
+    };
+    
+    HttpResponse::Ok().json(params)
 }
 
 // Helper function to convert from DatabaseError to HttpResponse

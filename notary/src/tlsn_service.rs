@@ -16,11 +16,17 @@ use uuid::Uuid;
 use crate::db::Database;
 
 // Maximum time to wait for MPC connection to complete
-const MPC_TIMEOUT_SECS: u64 = 60;
+pub const MPC_TIMEOUT_SECS: u64 = 60;
 
 // Maximum transcript sizes
-const MAX_SENT_DATA: usize = 1 << 16; // 64KB
-const MAX_RECV_DATA: usize = 1 << 20; // 1MB
+pub const MAX_SENT_DATA: usize = 1 << 16; // 64KB
+pub const MAX_RECV_DATA: usize = 1 << 20; // 1MB
+
+// TLSNotary protocol version
+pub const TLSN_VERSION: &str = "1.0";
+
+// Supported features
+pub const SUPPORTED_FEATURES: &[&str] = &["selective_disclosure"];
 
 /// The TLS Notary MPC service that runs on port 7150
 pub struct TlsnService {

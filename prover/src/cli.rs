@@ -38,9 +38,13 @@ pub enum Commands {
         #[arg(long, default_value = "127.0.0.1")]
         notary_host: String,
         
-        /// Notary port
+        /// Notary port for MPC protocol
         #[arg(long, default_value = "7150")]
         notary_port: u16,
+        
+        /// Notary API port for parameter discovery
+        #[arg(long, default_value = "8080")]
+        notary_api_port: u16,
         
         /// Fields to redact or reveal in selective disclosure
         /// Format: key=REVEAL or key=REDACT
