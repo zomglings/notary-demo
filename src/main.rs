@@ -47,6 +47,24 @@ enum NotaryCommands {
         #[arg(long, required = true)]
         outfile: PathBuf,
     },
+    /// Create a configuration file for the notary server
+    Configure {
+        /// Path to the output configuration file
+        #[arg(long, required = true)]
+        outfile: PathBuf,
+        
+        /// Host address to bind the server to (default: 0.0.0.0)
+        #[arg(long)]
+        host: Option<String>,
+        
+        /// Port to run the server on (default: 7047)
+        #[arg(long)]
+        port: Option<u16>,
+        
+        /// Whether to enable TLS for the server (default: false)
+        #[arg(long)]
+        tls_enabled: Option<bool>,
+    },
     /// Run a TLSNotary server
     Serve {
         /// Path to the config file
@@ -94,6 +112,13 @@ fn main() {
                     // Run the build command
                     if let Err(err) = rt.block_on(notary::build(outfile)) {
                         eprintln!("Error building notary server: {}", err);
+                        std::process::exit(1);
+                    }
+                }
+                NotaryCommands::Configure { outfile, host, port, tls_enabled } => {
+                    // Generate notary server configuration
+                    if let Err(err) = notary::configure(outfile, host, port, tls_enabled) {
+                        eprintln!("Error generating configuration: {}", err);
                         std::process::exit(1);
                     }
                 }

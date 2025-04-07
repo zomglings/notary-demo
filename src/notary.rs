@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::error::Error;
 use std::process::{Command, Stdio};
+use std::fs;
+use std::io::Write;
 
 const NOTARY_SERVER_PATH: &str = "vendor/tlsn/crates/notary/server";
 const DEFAULT_BIN_NAME: &str = "notary-server";
@@ -88,5 +90,56 @@ pub async fn serve(
         return Err(format!("Notary server exited with status: {}", status).into());
     }
     
+    Ok(())
+}
+
+/// Creates a configuration file for the notary server
+pub fn configure(
+    outfile: PathBuf,
+    host: Option<String>,
+    port: Option<u16>,
+    tls_enabled: Option<bool>,
+) -> Result<(), Box<dyn Error>> {
+    // Default configuration values
+    let host = host.unwrap_or_else(|| "0.0.0.0".to_string());
+    let port = port.unwrap_or(7047);
+    let tls_enabled = tls_enabled.unwrap_or(false);
+
+    // Create the config file content
+    let config_content = format!(r#"---
+server:
+  name: "notary-server"
+  host: "{}"
+  port: {}
+
+notarization:
+  max_sent_data: 16384 # 16KB
+  max_recv_data: 262144 # 256KB
+
+api_keys:
+  enabled: false
+  whitelist_path: ""
+
+logging:
+  level: "debug"
+  # format: "compact" (default) | "json"
+  format: "compact"
+
+tls:
+  enabled: {}
+  private_key: "fixture/notary/notary.key"
+  certificate: "fixture/notary/notary.crt"
+"#, host, port, tls_enabled);
+
+    // Create parent directories if they don't exist
+    if let Some(parent) = outfile.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    
+    // Write the configuration to the file
+    let mut file = fs::File::create(&outfile)?;
+    file.write_all(config_content.as_bytes())?;
+    
+    println!("Notary server configuration written to: {}", outfile.display());
     Ok(())
 } 
