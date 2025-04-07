@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod certs;
+mod notary;
 
 #[derive(Parser)]
 #[command(name = "stamp")]
@@ -31,6 +32,35 @@ enum Commands {
         #[arg(long, short = 'p', default_value = "")]
         prefix: String,
     },
+    /// TLSNotary commands
+    Notary {
+        #[command(subcommand)]
+        command: NotaryCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum NotaryCommands {
+    /// Build the TLSNotary server from source
+    Build {
+        /// Output directory for the built binary (default: vendor/tlsn/target/release)
+        #[arg(long)]
+        outdir: Option<PathBuf>,
+    },
+    /// Run a TLSNotary server
+    Serve {
+        /// Path to the config file
+        #[arg(long)]
+        config: Option<PathBuf>,
+        
+        /// Path to the certificate directory
+        #[arg(long)]
+        certs_dir: Option<PathBuf>,
+        
+        /// Path to the pre-built notary server binary
+        #[arg(long)]
+        notary_bin: Option<PathBuf>,
+    },
 }
 
 fn main() {
@@ -46,6 +76,42 @@ fn main() {
                 Err(err) => {
                     eprintln!("Error generating certificates: {}", err);
                     std::process::exit(1);
+                }
+            }
+        }
+        Commands::Notary { command } => {
+            match command {
+                NotaryCommands::Build { outdir } => {
+                    // Create a runtime for async code
+                    let rt = match tokio::runtime::Runtime::new() {
+                        Ok(rt) => rt,
+                        Err(err) => {
+                            eprintln!("Error creating Tokio runtime: {}", err);
+                            std::process::exit(1);
+                        }
+                    };
+                    
+                    // Run the build command
+                    if let Err(err) = rt.block_on(notary::build(outdir)) {
+                        eprintln!("Error building notary server: {}", err);
+                        std::process::exit(1);
+                    }
+                }
+                NotaryCommands::Serve { config, certs_dir, notary_bin } => {
+                    // Create a runtime for async code
+                    let rt = match tokio::runtime::Runtime::new() {
+                        Ok(rt) => rt,
+                        Err(err) => {
+                            eprintln!("Error creating Tokio runtime: {}", err);
+                            std::process::exit(1);
+                        }
+                    };
+                    
+                    // Run the notary server
+                    if let Err(err) = rt.block_on(notary::serve(config, certs_dir, notary_bin)) {
+                        eprintln!("Error running notary server: {}", err);
+                        std::process::exit(1);
+                    }
                 }
             }
         }
