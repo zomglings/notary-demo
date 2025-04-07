@@ -9,6 +9,7 @@ rcgen = "0.11"
 x509-parser = "0.15"
 tokio = { version = "1.35", features = ["full"] }
 p256 = { version = "0.13", features = ["ecdsa", "pem"] }
+k256 = { version = "0.13", features = ["ecdsa", "pem"] }
 rand = "0.8"
 pkcs8 = { version = "0.10", features = ["pem"] }
 

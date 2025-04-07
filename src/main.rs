@@ -41,7 +41,7 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum NotaryCommands {
-    /// Generate ECDSA P-256 keys for the notary server
+    /// Generate ECDSA keys for the notary server
     Keygen {
         /// Path to output the private key
         #[arg(long, required = true)]
@@ -50,6 +50,10 @@ enum NotaryCommands {
         /// Path to output the public key
         #[arg(long, required = true)]
         public_key: PathBuf,
+        
+        /// Elliptic curve to use (p256 or secp256k1)
+        #[arg(long, default_value = "p256")]
+        curve: String,
     },
     /// Build the TLSNotary server from source
     Build {
@@ -125,9 +129,9 @@ fn main() {
         }
         Commands::Notary { command } => {
             match command {
-                NotaryCommands::Keygen { private_key, public_key } => {
-                    // Generate ECDSA P-256 keys for the notary server
-                    if let Err(err) = notary::generate_keys(private_key, public_key) {
+                NotaryCommands::Keygen { private_key, public_key, curve } => {
+                    // Generate ECDSA keys for the notary server
+                    if let Err(err) = notary::generate_keys(private_key, public_key, &curve) {
                         eprintln!("Error generating keys: {}", err);
                         std::process::exit(1);
                     }

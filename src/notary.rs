@@ -3,7 +3,8 @@ use std::error::Error;
 use std::process::{Command, Stdio};
 use std::fs;
 use std::io::Write;
-use p256::ecdsa::{SigningKey, VerifyingKey};
+use p256::ecdsa::{SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey};
+use k256::ecdsa::{SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey};
 use rand::rngs::OsRng;
 use pkcs8::{LineEnding, EncodePrivateKey, EncodePublicKey};
 
@@ -96,18 +97,31 @@ pub async fn serve(
     Ok(())
 }
 
-/// Generates ECDSA P-256 keys for the notary server
+/// Generates ECDSA keys for the notary server
 pub fn generate_keys(
+    private_key_path: PathBuf,
+    public_key_path: PathBuf,
+    curve: &str,
+) -> Result<(), Box<dyn Error>> {
+    match curve.to_lowercase().as_str() {
+        "p256" => generate_p256_keys(private_key_path, public_key_path),
+        "secp256k1" => generate_secp256k1_keys(private_key_path, public_key_path),
+        _ => Err(format!("Unsupported curve: {}. Supported values are 'p256' and 'secp256k1'.", curve).into())
+    }
+}
+
+/// Generates ECDSA P-256 keys
+fn generate_p256_keys(
     private_key_path: PathBuf,
     public_key_path: PathBuf,
 ) -> Result<(), Box<dyn Error>> {
     println!("Generating ECDSA P-256 key pair for notary server...");
     
     // Generate a new random ECDSA P-256 key pair
-    let signing_key = SigningKey::random(&mut OsRng);
+    let signing_key = P256SigningKey::random(&mut OsRng);
     
     // Get the corresponding verifying key (public key)
-    let verifying_key = VerifyingKey::from(&signing_key);
+    let verifying_key = P256VerifyingKey::from(&signing_key);
     
     // Convert keys to PEM format
     let private_key_pem = signing_key.to_pkcs8_pem(LineEnding::LF)?;
@@ -126,6 +140,42 @@ pub fn generate_keys(
     fs::write(&public_key_path, public_key_pem.as_str())?;
     
     println!("ECDSA P-256 keys generated successfully:");
+    println!("  Private key: {}", private_key_path.display());
+    println!("  Public key:  {}", public_key_path.display());
+    
+    Ok(())
+}
+
+/// Generates ECDSA secp256k1 keys
+fn generate_secp256k1_keys(
+    private_key_path: PathBuf,
+    public_key_path: PathBuf,
+) -> Result<(), Box<dyn Error>> {
+    println!("Generating ECDSA secp256k1 key pair for notary server...");
+    
+    // Generate a new random ECDSA secp256k1 key pair
+    let signing_key = K256SigningKey::random(&mut OsRng);
+    
+    // Get the corresponding verifying key (public key)
+    let verifying_key = K256VerifyingKey::from(&signing_key);
+    
+    // Convert keys to PEM format
+    let private_key_pem = signing_key.to_pkcs8_pem(LineEnding::LF)?;
+    let public_key_pem = verifying_key.to_public_key_pem(LineEnding::LF)?;
+    
+    // Create parent directories if they don't exist
+    if let Some(parent) = private_key_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if let Some(parent) = public_key_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    
+    // Write keys to files
+    fs::write(&private_key_path, private_key_pem.as_str())?;
+    fs::write(&public_key_path, public_key_pem.as_str())?;
+    
+    println!("ECDSA secp256k1 keys generated successfully:");
     println!("  Private key: {}", private_key_path.display());
     println!("  Public key:  {}", public_key_path.display());
     
