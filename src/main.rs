@@ -148,6 +148,37 @@ enum ProverCommands {
         outfile: String,
     },
     
+    /// Simple notarize version (exact copy of direct-test)
+    SimpleNotarize {
+        /// URL to make the request to
+        #[arg(required = true)]
+        url: String,
+        
+        /// HTTP method (GET, POST, etc.)
+        #[arg(long, default_value = "GET")]
+        method: String,
+        
+        /// HTTP headers in format "key:value"
+        #[arg(long)]
+        header: Vec<String>,
+        
+        /// HTTP request body
+        #[arg(long)]
+        body: Option<String>,
+        
+        /// Notary server host
+        #[arg(long)]
+        notary_host: Option<String>,
+        
+        /// Notary server port
+        #[arg(long)]
+        notary_port: Option<u16>,
+        
+        /// Output file prefix for attestation and secrets
+        #[arg(long, default_value = "simple-notarize")]
+        outfile: String,
+    },
+    
     /// Create a verifiable presentation from attestation
     Present {
         /// Path to the attestation file
@@ -396,6 +427,24 @@ fn main() {
                     // Direct test using example code
                     if let Err(err) = rt.block_on(prover::direct_test(&path, &outfile)) {
                         eprintln!("Error running direct test: {}", err);
+                        std::process::exit(1);
+                    }
+                }
+                ProverCommands::SimpleNotarize { url, method, header, body, notary_host, notary_port, outfile } => {
+                    // Parse headers
+                    let mut headers = HashMap::new();
+                    for h in header {
+                        if let Some((key, value)) = h.split_once(':') {
+                            headers.insert(key.trim().to_string(), value.trim().to_string());
+                        } else {
+                            eprintln!("Invalid header format: {}. Use 'key:value' format.", h);
+                            std::process::exit(1);
+                        }
+                    }
+                    
+                    // Call simple_notarize
+                    if let Err(err) = rt.block_on(prover::simple_notarize(&url, &method, headers, body, notary_host, notary_port, &outfile)) {
+                        eprintln!("Error during simple notarization: {}", err);
                         std::process::exit(1);
                     }
                 }
