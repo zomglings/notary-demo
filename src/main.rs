@@ -43,9 +43,9 @@ enum Commands {
 enum NotaryCommands {
     /// Build the TLSNotary server from source
     Build {
-        /// Output directory for the built binary (default: vendor/tlsn/target/release)
+        /// Path to the output binary file (default: vendor/tlsn/target/release/notary-server)
         #[arg(long)]
-        outdir: Option<PathBuf>,
+        outfile: Option<PathBuf>,
     },
     /// Run a TLSNotary server
     Serve {
@@ -81,7 +81,7 @@ fn main() {
         }
         Commands::Notary { command } => {
             match command {
-                NotaryCommands::Build { outdir } => {
+                NotaryCommands::Build { outfile } => {
                     // Create a runtime for async code
                     let rt = match tokio::runtime::Runtime::new() {
                         Ok(rt) => rt,
@@ -92,7 +92,7 @@ fn main() {
                     };
                     
                     // Run the build command
-                    if let Err(err) = rt.block_on(notary::build(outdir)) {
+                    if let Err(err) = rt.block_on(notary::build(outfile)) {
                         eprintln!("Error building notary server: {}", err);
                         std::process::exit(1);
                     }
