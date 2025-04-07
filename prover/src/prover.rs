@@ -6,7 +6,7 @@ use hyper_util::rt::TokioIo;
 use log::{debug, info};
 use std::{collections::HashMap, net::SocketAddr, str::FromStr};
 use tlsn_common::config::ProtocolConfig;
-use tlsn_core::transcript::Idx;
+use tlsn_core::{transcript::Idx, CryptoProvider};
 use tlsn_prover::{state::Prove, Prover, ProverConfig};
 use tokio::net::TcpStream;
 use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
@@ -21,6 +21,11 @@ const MAX_RECV_DATA: usize = 1 << 20; // 1MB
 pub struct TlsnProver {
     notary_host: String, 
     notary_port: u16,
+}
+
+/// Creates a default crypto provider for TLSNotary
+fn get_crypto_provider() -> CryptoProvider {
+    CryptoProvider::default()
 }
 
 impl TlsnProver {
@@ -94,6 +99,7 @@ impl TlsnProver {
                         ProverError::ConfigError(format!("Invalid protocol config: {}", e))
                     })?,
             )
+            .crypto_provider(get_crypto_provider()) // Add crypto provider
             .build()
             .map_err(|e| {
                 ProverError::ConfigError(format!("Failed to build prover config: {}", e))
