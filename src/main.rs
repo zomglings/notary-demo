@@ -1,8 +1,11 @@
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod certs;
 mod notary;
+mod prover;
+mod request;
 
 #[derive(Parser)]
 #[command(name = "stamp")]
@@ -36,6 +39,105 @@ enum Commands {
     Notary {
         #[command(subcommand)]
         command: NotaryCommands,
+    },
+    /// TLSNotary prover commands
+    Prover {
+        #[command(subcommand)]
+        command: ProverCommands,
+    },
+    /// Make an HTTP request
+    Request {
+        /// URL to make the request to
+        #[arg(required = true)]
+        url: String,
+        
+        /// HTTP method (GET, POST, etc.)
+        #[arg(long, default_value = "GET")]
+        method: String,
+        
+        /// HTTP headers in format "key:value"
+        #[arg(long)]
+        header: Vec<String>,
+        
+        /// HTTP request body
+        #[arg(long)]
+        body: Option<String>,
+        
+        /// File to save the response to
+        #[arg(long)]
+        outfile: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProverCommands {
+    /// Notarize an HTTPS request
+    Notarize {
+        /// URL to make the request to
+        #[arg(required = true)]
+        url: String,
+        
+        /// HTTP method (GET, POST, etc.)
+        #[arg(long, default_value = "GET")]
+        method: String,
+        
+        /// HTTP headers in format "key:value"
+        #[arg(long)]
+        header: Vec<String>,
+        
+        /// HTTP request body
+        #[arg(long)]
+        body: Option<String>,
+        
+        /// Notary server host
+        #[arg(long)]
+        notary_host: Option<String>,
+        
+        /// Notary server port
+        #[arg(long)]
+        notary_port: Option<u16>,
+        
+        /// Output file prefix for attestation and secrets
+        #[arg(long, default_value = "notarization")]
+        outfile: String,
+    },
+    
+    /// Create a verifiable presentation from attestation
+    Present {
+        /// Path to the attestation file
+        #[arg(long, required = true)]
+        attestation: PathBuf,
+        
+        /// Path to the secrets file
+        #[arg(long, required = true)]
+        secrets: PathBuf,
+        
+        /// Path for the output presentation file
+        #[arg(long, default_value = "presentation.bin")]
+        outfile: PathBuf,
+        
+        /// Request headers to redact
+        #[arg(long)]
+        redact_request_header: Vec<String>,
+        
+        /// Response headers to redact
+        #[arg(long)]
+        redact_response_header: Vec<String>,
+        
+        /// Redact request body
+        #[arg(long)]
+        redact_request_body: bool,
+        
+        /// Redact response body
+        #[arg(long)]
+        redact_response_body: bool,
+    },
+    
+    /// Verify a presentation
+    Verify {
+        /// Path to the presentation file
+        #[arg(required = true)]
+        presentation: PathBuf,
     },
 }
 
@@ -124,6 +226,86 @@ fn main() {
                 Err(err) => {
                     eprintln!("Error generating certificates: {}", err);
                     std::process::exit(1);
+                }
+            }
+        }
+        Commands::Request { url, method, header, body, outfile } => {
+            // Create runtime for async code
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(err) => {
+                    eprintln!("Error creating Tokio runtime: {}", err);
+                    std::process::exit(1);
+                }
+            };
+            
+            // Parse headers
+            let mut headers = HashMap::new();
+            for h in header {
+                if let Some((key, value)) = h.split_once(':') {
+                    headers.insert(key.trim().to_string(), value.trim().to_string());
+                } else {
+                    eprintln!("Invalid header format: {}. Use 'key:value' format.", h);
+                    std::process::exit(1);
+                }
+            }
+            
+            // Make HTTP request
+            if let Err(err) = rt.block_on(request::make_request(&url, &method, headers, body, outfile)) {
+                eprintln!("Error making HTTP request: {}", err);
+                std::process::exit(1);
+            }
+        }
+        Commands::Prover { command } => {
+            // Create runtime for async code
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(err) => {
+                    eprintln!("Error creating Tokio runtime: {}", err);
+                    std::process::exit(1);
+                }
+            };
+            
+            match command {
+                ProverCommands::Notarize { url, method, header, body, notary_host, notary_port, outfile } => {
+                    // Parse headers
+                    let mut headers = HashMap::new();
+                    for h in header {
+                        if let Some((key, value)) = h.split_once(':') {
+                            headers.insert(key.trim().to_string(), value.trim().to_string());
+                        } else {
+                            eprintln!("Invalid header format: {}. Use 'key:value' format.", h);
+                            std::process::exit(1);
+                        }
+                    }
+                    
+                    // Run notarization
+                    if let Err(err) = rt.block_on(prover::notarize(&url, &method, headers, body, notary_host, notary_port, &outfile)) {
+                        eprintln!("Error during notarization: {}", err);
+                        std::process::exit(1);
+                    }
+                }
+                ProverCommands::Present { attestation, secrets, outfile, redact_request_header, redact_response_header, redact_request_body, redact_response_body } => {
+                    // Create presentation
+                    if let Err(err) = rt.block_on(prover::create_presentation(
+                        attestation,
+                        secrets,
+                        outfile,
+                        redact_request_header,
+                        redact_response_header,
+                        redact_request_body,
+                        redact_response_body,
+                    )) {
+                        eprintln!("Error creating presentation: {}", err);
+                        std::process::exit(1);
+                    }
+                }
+                ProverCommands::Verify { presentation } => {
+                    // Verify presentation
+                    if let Err(err) = rt.block_on(prover::verify_presentation(presentation)) {
+                        eprintln!("Error verifying presentation: {}", err);
+                        std::process::exit(1);
+                    }
                 }
             }
         }

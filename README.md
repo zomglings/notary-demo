@@ -1,6 +1,6 @@
 # TLSNotary Demo Tool (stamp)
 
-A command-line tool for working with TLSNotary servers. This tool simplifies the process of building, configuring, and running TLSNotary servers.
+A command-line tool for working with TLSNotary servers. This tool simplifies the process of building, configuring, running TLSNotary servers, and proving arbitrary API calls.
 
 ## Documentation
 
@@ -124,4 +124,91 @@ Certificate options:
 - `--aliases`: Additional domain aliases (Subject Alternative Names)
 - `--outdir`: Output directory for the certificates (required)
 - `--prefix`: Prefix for certificate filenames
+
+## Proving API Calls with TLSNotary
+
+The `stamp` tool allows you to notarize arbitrary HTTPS API calls, create verifiable presentations with selective disclosure, and verify these presentations. This enables you to prove that an API returned specific data without revealing your credentials or other sensitive information.
+
+### Step 1: Notarize an API Call
+
+Make an HTTPS request and notarize it:
+
+```sh
+# Make a basic GET request
+stamp prover notarize https://api.example.com/endpoint
+
+# Make a request with custom method and headers
+stamp prover notarize https://api.example.com/endpoint \
+  --method POST \
+  --header "Content-Type:application/json" \
+  --header "Authorization:Bearer your_token" \
+  --body '{"query": "example"}' \
+  --outfile my-notarization
+
+# Specify a custom notary server
+stamp prover notarize https://api.example.com/endpoint \
+  --notary-host 127.0.0.1 \
+  --notary-port 7047
+```
+
+This command:
+- Connects to the notary server (default: 127.0.0.1:7047)
+- Makes the HTTPS request to the specified URL
+- Creates an attestation of the TLS session
+- Saves the attestation and secrets to files (default: `notarization.attestation.bin` and `notarization.secrets.bin`)
+
+### Step 2: Create a Verifiable Presentation
+
+Create a presentation that selectively reveals parts of the notarized session:
+
+```sh
+# Create a basic presentation
+stamp prover present \
+  --attestation my-notarization.attestation.bin \
+  --secrets my-notarization.secrets.bin \
+  --outfile my-presentation.bin
+
+# Redact sensitive headers
+stamp prover present \
+  --attestation my-notarization.attestation.bin \
+  --secrets my-notarization.secrets.bin \
+  --redact-request-header "Authorization" \
+  --redact-request-header "Cookie" \
+  --outfile my-presentation.bin
+
+# Redact request body (e.g., credentials) but show response
+stamp prover present \
+  --attestation my-notarization.attestation.bin \
+  --secrets my-notarization.secrets.bin \
+  --redact-request-body \
+  --outfile my-presentation.bin
+```
+
+This command:
+- Loads the attestation and secrets from the specified files
+- Creates a presentation with selective disclosure based on the specified redactions
+- Saves the presentation to the specified output file
+
+### Step 3: Verify a Presentation
+
+Verify and display the contents of a presentation:
+
+```sh
+# Verify a presentation
+stamp prover verify my-presentation.bin
+```
+
+This command:
+- Loads and cryptographically verifies the presentation
+- Displays information about the verified session:
+  - Server name
+  - Connection time
+  - Request and response data with redacted (undisclosed) parts marked with 'X'
+
+### Example Use Cases
+
+1. **Proving API responses**: Prove that an API returned specific data at a certain time
+2. **Selective disclosure**: Reveal specific parts of an API response while hiding your credentials
+3. **Verifiable quotes**: Notarize price quotes from an API without revealing your identity
+4. **Data integrity**: Prove that data came from a specific API without modification
 
