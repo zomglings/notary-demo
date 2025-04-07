@@ -47,7 +47,7 @@ Generate ECDSA P-256 key pair for the notary server:
 
 ```sh
 # Generate ECDSA P-256 keys for the notary server
-stamp notary generate-keys --private-key=/path/to/notary.key --public-key=/path/to/notary.pub
+stamp notary keygen --private-key=/path/to/notary.key --public-key=/path/to/notary.pub
 ```
 
 This command:

@@ -42,7 +42,7 @@ enum Commands {
 #[derive(Subcommand)]
 enum NotaryCommands {
     /// Generate ECDSA P-256 keys for the notary server
-    GenerateKeys {
+    Keygen {
         /// Path to output the private key
         #[arg(long, required = true)]
         private_key: PathBuf,
@@ -125,7 +125,7 @@ fn main() {
         }
         Commands::Notary { command } => {
             match command {
-                NotaryCommands::GenerateKeys { private_key, public_key } => {
+                NotaryCommands::Keygen { private_key, public_key } => {
                     // Generate ECDSA P-256 keys for the notary server
                     if let Err(err) = notary::generate_keys(private_key, public_key) {
                         eprintln!("Error generating keys: {}", err);
