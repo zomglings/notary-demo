@@ -41,6 +41,16 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum NotaryCommands {
+    /// Generate ECDSA P-256 keys for the notary server
+    GenerateKeys {
+        /// Path to output the private key
+        #[arg(long, required = true)]
+        private_key: PathBuf,
+        
+        /// Path to output the public key
+        #[arg(long, required = true)]
+        public_key: PathBuf,
+    },
     /// Build the TLSNotary server from source
     Build {
         /// Path to the output binary file
@@ -72,6 +82,14 @@ enum NotaryCommands {
         /// Path to the TLS private key file
         #[arg(long)]
         tls_private_key: Option<PathBuf>,
+        
+        /// Path to the notary private key file
+        #[arg(long)]
+        notary_private_key: Option<PathBuf>,
+        
+        /// Path to the notary public key file
+        #[arg(long)]
+        notary_public_key: Option<PathBuf>,
     },
     /// Run a TLSNotary server
     Serve {
@@ -107,6 +125,13 @@ fn main() {
         }
         Commands::Notary { command } => {
             match command {
+                NotaryCommands::GenerateKeys { private_key, public_key } => {
+                    // Generate ECDSA P-256 keys for the notary server
+                    if let Err(err) = notary::generate_keys(private_key, public_key) {
+                        eprintln!("Error generating keys: {}", err);
+                        std::process::exit(1);
+                    }
+                }
                 NotaryCommands::Build { outfile } => {
                     // Create a runtime for async code
                     let rt = match tokio::runtime::Runtime::new() {
@@ -123,9 +148,18 @@ fn main() {
                         std::process::exit(1);
                     }
                 }
-                NotaryCommands::Configure { outfile, host, port, tls_enabled, tls_certificate, tls_private_key } => {
+                NotaryCommands::Configure { outfile, host, port, tls_enabled, tls_certificate, tls_private_key, notary_private_key, notary_public_key } => {
                     // Generate notary server configuration
-                    if let Err(err) = notary::configure(outfile, host, port, tls_enabled, tls_certificate, tls_private_key) {
+                    if let Err(err) = notary::configure(
+                        outfile, 
+                        host, 
+                        port, 
+                        tls_enabled, 
+                        tls_certificate, 
+                        tls_private_key,
+                        notary_private_key,
+                        notary_public_key
+                    ) {
                         eprintln!("Error generating configuration: {}", err);
                         std::process::exit(1);
                     }

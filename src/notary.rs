@@ -3,6 +3,9 @@ use std::error::Error;
 use std::process::{Command, Stdio};
 use std::fs;
 use std::io::Write;
+use p256::ecdsa::{SigningKey, VerifyingKey};
+use rand::rngs::OsRng;
+use pkcs8::{LineEnding, EncodePrivateKey, EncodePublicKey};
 
 const NOTARY_SERVER_PATH: &str = "vendor/tlsn/crates/notary/server";
 const DEFAULT_BIN_NAME: &str = "notary-server";
@@ -93,6 +96,42 @@ pub async fn serve(
     Ok(())
 }
 
+/// Generates ECDSA P-256 keys for the notary server
+pub fn generate_keys(
+    private_key_path: PathBuf,
+    public_key_path: PathBuf,
+) -> Result<(), Box<dyn Error>> {
+    println!("Generating ECDSA P-256 key pair for notary server...");
+    
+    // Generate a new random ECDSA P-256 key pair
+    let signing_key = SigningKey::random(&mut OsRng);
+    
+    // Get the corresponding verifying key (public key)
+    let verifying_key = VerifyingKey::from(&signing_key);
+    
+    // Convert keys to PEM format
+    let private_key_pem = signing_key.to_pkcs8_pem(LineEnding::LF)?;
+    let public_key_pem = verifying_key.to_public_key_pem(LineEnding::LF)?;
+    
+    // Create parent directories if they don't exist
+    if let Some(parent) = private_key_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if let Some(parent) = public_key_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    
+    // Write keys to files
+    fs::write(&private_key_path, private_key_pem.as_str())?;
+    fs::write(&public_key_path, public_key_pem.as_str())?;
+    
+    println!("ECDSA P-256 keys generated successfully:");
+    println!("  Private key: {}", private_key_path.display());
+    println!("  Public key:  {}", public_key_path.display());
+    
+    Ok(())
+}
+
 /// Creates a configuration file for the notary server
 pub fn configure(
     outfile: PathBuf,
@@ -101,6 +140,8 @@ pub fn configure(
     tls_enabled: Option<bool>,
     tls_certificate: Option<PathBuf>,
     tls_private_key: Option<PathBuf>,
+    notary_private_key: Option<PathBuf>,
+    notary_public_key: Option<PathBuf>,
 ) -> Result<(), Box<dyn Error>> {
     // Default configuration values
     let host = host.unwrap_or_else(|| "0.0.0.0".to_string());
@@ -118,6 +159,15 @@ pub fn configure(
             println!("Make sure the files exist at the locations specified in the configuration.");
         }
     }
+    
+    // Use default paths for notary keys if not provided
+    let notary_private_key_path = notary_private_key
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "fixture/notary/notary.key".to_string());
+    
+    let notary_public_key_path = notary_public_key
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "fixture/notary/notary.pub".to_string());
 
     // Create the config file content using the TLSNotary server's expected format
     let config_content = format!(r#"---
@@ -145,14 +195,16 @@ tls:
   certificate_pem_path: {}
 
 notary_key:
-  private_key_pem_path: "fixture/notary/notary.key"
-  public_key_pem_path: "fixture/notary/notary.pub"
+  private_key_pem_path: "{}"
+  public_key_pem_path: "{}"
 "#, 
     host, 
     port, 
     tls_enabled,
     private_key_path.map_or("null".to_string(), |p| format!("\"{}\"", p)),
-    certificate_path.map_or("null".to_string(), |p| format!("\"{}\"", p))
+    certificate_path.map_or("null".to_string(), |p| format!("\"{}\"", p)),
+    format!("\"{}\"", notary_private_key_path),
+    format!("\"{}\"", notary_public_key_path)
 );
 
     // Create parent directories if they don't exist
