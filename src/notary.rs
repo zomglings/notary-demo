@@ -175,17 +175,20 @@ server:
   name: "notary-server"
   host: "{}"
   port: {}
+  html_info: ""
 
 notarization:
   max_sent_data: 16384 # 16KB
   max_recv_data: 262144 # 256KB
+  timeout: 3600 # 1 hour
 
-api_keys:
+authorization:
   enabled: false
-  whitelist_path: ""
+  whitelist_csv_path: null
 
 logging:
   level: "debug"
+  filter: null
   # format: "compact" (default) | "json"
   format: "compact"
 
