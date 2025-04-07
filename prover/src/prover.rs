@@ -4,7 +4,7 @@ use http_body_util::{BodyExt, Empty, Full};
 use hyper::{Request, Uri};
 use hyper_util::{rt::{TokioIo, TokioExecutor}, client::legacy::Client as HyperClient};
 use hyper_util::client::legacy::connect::HttpConnector;
-use log::{debug, info, warn};
+use log::{debug, info, warn, error};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr, str::FromStr};
 use tlsn_common::config::ProtocolConfig;
@@ -19,7 +19,7 @@ use hex;
 const DEFAULT_TIMEOUT_SECS: u64 = 30; // Keeping for future timeout implementations
 const MAX_SENT_DATA: usize = 1 << 16; // 64KB - Fallback if API unavailable
 const MAX_RECV_DATA: usize = 1 << 20; // 1MB - Fallback if API unavailable
-const DEFAULT_MPC_TIMEOUT_SECS: u64 = 60; // Default MPC timeout - Fallback if API unavailable
+const DEFAULT_MPC_TIMEOUT_SECS: u64 = 300; // Default MPC timeout - Fallback if API unavailable (5 minutes)
 
 /// Structure representing the MPC parameters returned by the notary API
 #[derive(Debug, Serialize, Deserialize)]
@@ -159,7 +159,9 @@ impl TlsnProver {
         };
         
         // Setup prover configuration with fetched parameters
-        debug!("Setting up TLSNotary prover configuration");
+        info!("DETAILED FLOW: [1/7] Setting up TLSNotary prover configuration");
+        info!("Protocol settings: max_sent_data={}, max_recv_data={}", 
+               mpc_params.max_sent_data, mpc_params.max_recv_data);
         let prover_config = ProverConfig::builder()
             .server_name(server_domain) // Use &str directly, not String
             .protocol_config(
@@ -168,59 +170,87 @@ impl TlsnProver {
                     .max_recv_data(mpc_params.max_recv_data)
                     .build()
                     .map_err(|e| {
+                        error!("PROTOCOL CONFIG ERROR: Invalid protocol config: {}", e);
                         ProverError::ConfigError(format!("Invalid protocol config: {}", e))
                     })?,
             )
             .crypto_provider(get_crypto_provider()) // Add crypto provider
             .build()
             .map_err(|e| {
+                error!("PROVER CONFIG ERROR: Failed to build prover config: {}", e);
                 ProverError::ConfigError(format!("Failed to build prover config: {}", e))
             })?;
         
         // Create prover
+        info!("DETAILED FLOW: [2/7] Creating prover instance");
         let prover = Prover::new(prover_config);
         
         // Perform the setup phase with the notary
-        debug!("Starting TLSNotary setup phase with notary");
-        let prover = prover
-            .setup(notary_socket.compat())
-            .await
-            .map_err(|e| {
-                ProverError::TlsnProtocolError(format!("Failed in setup phase: {}", e))
-            })?;
+        info!("DETAILED FLOW: [3/7] Starting TLSNotary setup phase with notary");
+        let prover = match prover.setup(notary_socket.compat()).await {
+            Ok(p) => {
+                info!("Setup phase completed successfully");
+                p
+            },
+            Err(e) => {
+                error!("SETUP ERROR: Failed in setup phase: {}", e);
+                error!("Detailed error: {:?}", e);
+                return Err(ProverError::TlsnProtocolError(format!("Failed in setup phase: {}", e)));
+            }
+        };
         
         // Connect to the TLS server
-        debug!("Connecting to target server: {}", server_addr);
-        let client_socket = TcpStream::connect(socket_addr)
-            .await
-            .map_err(|e| {
-                ProverError::RequestError(format!("Failed to connect to server: {}", e))
-            })?;
+        info!("DETAILED FLOW: [4/7] Connecting to target server: {}", server_addr);
+        let client_socket = match TcpStream::connect(socket_addr).await {
+            Ok(socket) => {
+                info!("Successfully connected to target server: {}", server_addr);
+                socket
+            },
+            Err(e) => {
+                error!("CONNECTION ERROR: Failed to connect to server: {}", e);
+                return Err(ProverError::RequestError(format!("Failed to connect to server: {}", e)));
+            }
+        };
         
         // Pass server connection into the prover and get the MPC TLS connection back
-        let (mpc_tls_connection, prover_future) = prover
-            .connect(client_socket.compat())
-            .await
-            .map_err(|e| {
-                ProverError::TlsnProtocolError(format!(
+        info!("DETAILED FLOW: [5/7] Establishing MPC TLS connection to target server");
+        let (mpc_tls_connection, prover_future) = match prover.connect(client_socket.compat()).await {
+            Ok(result) => {
+                info!("Successfully established MPC TLS connection to target server");
+                result
+            },
+            Err(e) => {
+                error!("MPC CONNECTION ERROR: Failed to establish MPC TLS connection: {}", e);
+                error!("Detailed error: {:?}", e);
+                return Err(ProverError::TlsnProtocolError(format!(
                     "Failed to establish MPC TLS connection: {}", e
-                ))
-            })?;
+                )));
+            }
+        };
         
         // Wrap the connection for use with hyper
+        info!("DETAILED FLOW: [6/7] Preparing HTTP connection through MPC TLS");
         let mpc_tls_connection = TokioIo::new(mpc_tls_connection.compat());
         
         // Spawn the prover to run in the background
+        info!("Spawning prover future as background task");
         let prover_task = tokio::spawn(prover_future);
         
         // Setup HTTP client
-        let (mut request_sender, connection) = hyper::client::conn::http1::handshake(mpc_tls_connection)
-            .await
-            .map_err(|e| {
-                ProverError::RequestError(format!("Failed in HTTP handshake: {}", e))
-            })?;
+        info!("DETAILED FLOW: [7/7] Performing HTTP handshake through MPC TLS connection");
+        let (mut request_sender, connection) = match hyper::client::conn::http1::handshake(mpc_tls_connection).await {
+            Ok(result) => {
+                info!("HTTP handshake successful");
+                result
+            },
+            Err(e) => {
+                error!("HTTP ERROR: Failed in HTTP handshake: {}", e);
+                return Err(ProverError::RequestError(format!("Failed in HTTP handshake: {}", e)));
+            }
+        };
         
         // Spawn the connection
+        info!("Spawning HTTP connection as background task");
         tokio::spawn(connection);
         
         // Build the request

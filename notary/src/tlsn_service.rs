@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::db::Database;
 
 // Maximum time to wait for MPC connection to complete
-pub const MPC_TIMEOUT_SECS: u64 = 60;
+pub const MPC_TIMEOUT_SECS: u64 = 300; // Increase from 60 to 300 seconds (5 minutes)
 
 // Maximum transcript sizes
 pub const MAX_SENT_DATA: usize = 1 << 16; // 64KB
@@ -86,27 +86,34 @@ where
     // Generate a unique session ID for this connection
     let session_id = Uuid::new_v4().to_string();
     info!("Starting TLSNotary session {} with {}", session_id, peer_addr);
+    info!("DETAILED FLOW: [1/5] Initializing TLSNotary session");
     
     // Create a protocol config validator with reasonable limits
+    info!("DETAILED FLOW: [2/5] Creating protocol validator with max_sent_data={}, max_recv_data={}", 
+           MAX_SENT_DATA, MAX_RECV_DATA);
     let protocol_config_validator = ProtocolConfigValidator::builder()
         .max_sent_data(MAX_SENT_DATA)
         .max_recv_data(MAX_RECV_DATA)
         .build()?;
     
     // Configure the verifier with the protocol settings
+    info!("DETAILED FLOW: [3/5] Configuring verifier with protocol settings");
     let verifier_config = tlsn_verifier::VerifierConfig::builder()
         .protocol_config_validator(protocol_config_validator)
         .build()?;
     
     // Create the verifier instance
+    info!("DETAILED FLOW: [4/5] Creating verifier instance");
     let verifier = Verifier::new(verifier_config);
     
     // Create attestation config
+    info!("DETAILED FLOW: [5/5] Creating attestation config and starting notarization process");
     let att_config = AttestationConfig::builder()
         // We'll not specify signature algorithms for now
         .build()?;
         
     // Execute the notarization protocol with timeout
+    info!("Starting notarize() with timeout of {} seconds", MPC_TIMEOUT_SECS);
     let result = timeout(
         Duration::from_secs(MPC_TIMEOUT_SECS),
         verifier.notarize(socket.compat(), &att_config)
@@ -117,39 +124,44 @@ where
         Ok(protocol_result) => {
             match protocol_result {
                 Ok(attestation) => {
-                    info!("Notarization completed successfully for session {}", session_id);
+                    info!("SUCCESS: Notarization completed successfully for session {}", session_id);
                     
                     // For now, we'll use a fixed domain since the API might differ
                     // between TLSNotary versions
                     let domain = "notarized.example.com".to_string();
                     
                     // Serialize the attestation for storage
+                    info!("Serializing attestation for storage");
                     let proof_json = serde_json::to_string(&attestation)?;
                     
                     // Store the proof in the database
+                    info!("Storing proof in database");
                     match db.insert_proof(&domain, &proof_json) {
                         Ok(proof_id) => {
                             info!(
-                                "Notarization proof stored successfully for session {}, proof ID: {}", 
+                                "SUCCESS: Notarization proof stored successfully for session {}, proof ID: {}", 
                                 session_id, 
                                 proof_id
                             );
                         }
                         Err(e) => {
-                            error!("Failed to store proof for session {}: {}", session_id, e);
+                            error!("DB ERROR: Failed to store proof for session {}: {}", session_id, e);
                             return Err(format!("Failed to store proof: {}", e).into());
                         }
                     }
                 }
                 Err(e) => {
-                    error!("Notarization failed for session {}: {}", session_id, e);
+                    error!("PROTOCOL ERROR: Notarization failed for session {}: {}", session_id, e);
+                    error!("Detailed error type: {:?}", e);
                     return Err(Box::new(e));
                 }
             }
         },
-        Err(_) => {
+        Err(e) => {
+            // Tokio's timeout error doesn't have is_elapsed method, just always consider it a timeout
             let msg = format!("MPC protocol timed out after {} seconds", MPC_TIMEOUT_SECS);
-            error!("Session {}: {}", session_id, msg);
+            error!("TIMEOUT ERROR: Session {}: {}", session_id, msg);
+            error!("Error details: {:?}", e);
             return Err(msg.into());
         }
     }
