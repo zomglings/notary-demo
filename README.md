@@ -261,3 +261,20 @@ This command:
 3. **Verifiable quotes**: Notarize price quotes from an API without revealing your identity
 4. **Data integrity**: Prove that data came from a specific API without modification
 
+## Inspecting TLSNotary Files
+
+The `stamp inspect` command allows you to examine the contents of TLSNotary attestation and secrets files:
+
+```sh
+# Inspect an attestation file
+stamp inspect --attestation path/to/attestation.bin
+
+# Inspect both attestation and secrets files
+stamp inspect --attestation path/to/attestation.bin --secrets path/to/secrets.bin
+```
+
+This command displays:
+- Attestation information (notary key, timestamp, server name)
+- HTTP transcript details (when secrets are provided)
+- Request and response details including headers and bodies
+

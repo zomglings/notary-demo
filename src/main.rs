@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod certs;
+mod inspect;
 mod notary;
 mod prover;
 mod request;
@@ -67,6 +68,16 @@ enum Commands {
         /// File to save the response to
         #[arg(long)]
         outfile: Option<PathBuf>,
+    },
+    /// Inspect TLSNotary attestation and secrets files
+    Inspect {
+        /// Path to the attestation file
+        #[arg(long, required = true)]
+        attestation: PathBuf,
+        
+        /// Path to the secrets file (optional)
+        #[arg(long)]
+        secrets: Option<PathBuf>,
     },
 }
 
@@ -254,6 +265,22 @@ fn main() {
             // Make HTTP request
             if let Err(err) = rt.block_on(request::make_request(&url, &method, headers, body, outfile)) {
                 eprintln!("Error making HTTP request: {}", err);
+                std::process::exit(1);
+            }
+        }
+        Commands::Inspect { attestation, secrets } => {
+            // Create runtime for async code
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(err) => {
+                    eprintln!("Error creating Tokio runtime: {}", err);
+                    std::process::exit(1);
+                }
+            };
+            
+            // Inspect attestation and secrets
+            if let Err(err) = rt.block_on(inspect::inspect_attestation(attestation, secrets)) {
+                eprintln!("Error inspecting attestation: {}", err);
                 std::process::exit(1);
             }
         }
