@@ -1,0 +1,3 @@
+[submodule "vendor/tlsn"]
+	path = vendor/tlsn
+	url = https://github.com/tlsnotary/tlsn.git
