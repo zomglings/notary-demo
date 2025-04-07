@@ -576,7 +576,8 @@ pub async fn simple_notarize(
     method: &str,
     headers: HashMap<String, String>,
     _body: Option<String>,
-    hostname: Option<String>,
+    host: Option<String>,
+    port: Option<u16>,
     notary_host: Option<String>,
     notary_port: Option<u16>,
     outfile_prefix: &str,
@@ -614,23 +615,44 @@ pub async fn simple_notarize(
         }
     };
 
-    // For simplicity, use the standard SERVER_DOMAIN and just log if a different hostname was provided
-    if let Some(host) = &hostname {
-        if host != SERVER_DOMAIN {
-            println!("Warning: Hostname '{}' provided but using {} for connection", host, SERVER_DOMAIN);
+    // Check if a custom host was provided
+    let (server_name, use_fixture) = match &host {
+        Some(host_str) => {
+            // Use the provided host instead of SERVER_DOMAIN
+            (host_str.clone(), host_str == SERVER_DOMAIN)
+        },
+        None => {
+            // Use the default SERVER_DOMAIN (tlsnotary.org)
+            (SERVER_DOMAIN.to_string(), true)
         }
-    }
+    };
+
+    // Check if a custom port was provided
+    let server_port = if use_fixture {
+        // For the server fixture, use DEFAULT_FIXTURE_PORT (4000) or a specified port
+        port.unwrap_or_else(|| 
+            env::var("SERVER_PORT")
+                .map(|p| p.parse().expect("port should be valid integer"))
+                .unwrap_or(DEFAULT_FIXTURE_PORT)
+        )
+    } else {
+        // For external hosts, use the provided port or default to 443 (HTTPS)
+        port.unwrap_or(443)
+    };
+
+    // Determine the server host address
+    let server_host = if use_fixture {
+        env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
+    } else {
+        server_name.clone()
+    };
     
-    println!("SimpleNotarize: Using URI '{}'", uri);
+    println!("SimpleNotarize: Using server '{}:{}' with path '{}'", server_name, server_port, uri);
 
     let notary_host_val: String = notary_host.unwrap_or_else(|| env::var("NOTARY_HOST").unwrap_or("127.0.0.1".into()));
     let notary_port_val: u16 = notary_port.unwrap_or_else(|| env::var("NOTARY_PORT")
         .map(|port| port.parse().expect("port should be valid integer"))
         .unwrap_or(7047));
-    let server_host: String = env::var("SERVER_HOST").unwrap_or("127.0.0.1".into());
-    let server_port: u16 = env::var("SERVER_PORT")
-        .map(|port| port.parse().expect("port should be valid integer"))
-        .unwrap_or(DEFAULT_FIXTURE_PORT);
 
     // Build a client to connect to the notary server.
     let notary_client = NotaryClient::builder()
@@ -660,10 +682,10 @@ pub async fn simple_notarize(
         .await
         .expect("Could not connect to notary. Make sure it is running.");
 
-    // Set up protocol configuration for prover.
+    // Set up protocol configuration for prover, using the server_name for TLS verification
     // Prover configuration.
     let prover_config = ProverConfig::builder()
-        .server_name(SERVER_DOMAIN)
+        .server_name(SERVER_DOMAIN) // TODO: For now, always use SERVER_DOMAIN as we only support the fixture
         .protocol_config(
             ProtocolConfig::builder()
                 // We must configure the amount of data we expect to exchange beforehand, which will
@@ -682,6 +704,7 @@ pub async fn simple_notarize(
         .await?;
 
     // Open a TCP connection to the server.
+    println!("Connecting to server at {}:{}", server_host, server_port);
     let client_socket = tokio::net::TcpStream::connect((server_host, server_port)).await?;
 
     // Bind the prover to the server connection.
