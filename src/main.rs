@@ -39,8 +39,9 @@ fn main() {
     match cli.command {
         Commands::Certs { domain, aliases, outdir, prefix } => {
             match certs::generate_certificates(&domain, &aliases, &outdir, &prefix) {
-                Ok(cert_path) => {
-                    println!("Successfully generated certificates at: {}", cert_path.display());
+                Ok((cert_path, key_path)) => {
+                    println!("Certificate: {}", cert_path.display());
+                    println!("Private key: {}", key_path.display());
                 }
                 Err(err) => {
                     eprintln!("Error generating certificates: {}", err);

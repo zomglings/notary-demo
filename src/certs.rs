@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::io::Write;
 
-pub fn generate_certificates(domain: &str, aliases: &[String], outdir: &PathBuf, prefix: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn generate_certificates(domain: &str, aliases: &[String], outdir: &PathBuf, prefix: &str) -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
     // Create output directory if it doesn't exist
     match fs::create_dir_all(outdir) {
         Ok(_) => {},
@@ -84,5 +84,5 @@ pub fn generate_certificates(domain: &str, aliases: &[String], outdir: &PathBuf,
         }
     }
     
-    Ok(outdir.to_path_buf())
+    Ok((cert_path, key_path))
 } 
