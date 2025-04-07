@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
-use std::io::{Read, Write};
-use std::net::ToSocketAddrs;
+use std::io::Write;
 use std::path::PathBuf;
 use reqwest::{Client, Method, header::{HeaderMap, HeaderName, HeaderValue}};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

@@ -158,6 +158,22 @@ Options:
 
 For testing with the TLSNotary server fixture, use the special header `X-Use-HTTP09:true` to enable HTTP/0.9 mode, which uses a direct TCP connection with simple HTTP protocol formatting. This is particularly useful for the TLSNotary server fixture, which uses HTTP/0.9.
 
+```sh
+# Testing the TLSNotary server fixture (running on port 4000)
+cargo run -- request http://127.0.0.1:4000 \
+  --header "Host:tlsnotary.org" \
+  --header "X-Use-HTTP09:true"
+
+# With POST method and JSON body
+cargo run -- request http://127.0.0.1:4000 \
+  --header "Host:tlsnotary.org" \
+  --header "X-Use-HTTP09:true" \
+  --method POST \
+  --body '{"test":"data"}'
+```
+
+**Note about the Server Fixture**: The TLSNotary server fixture is a minimal test server designed specifically for testing the TLSNotary protocol. It responds with a simple " 2" message regardless of the endpoint, method, or headers used. This is expected behavior as the fixture focuses on providing a consistent, simple response for testing TLS notarization rather than serving real content.
+
 ## Proving API Calls with TLSNotary
 
 The `stamp` tool allows you to notarize arbitrary HTTPS API calls, create verifiable presentations with selective disclosure, and verify these presentations. This enables you to prove that an API returned specific data without revealing your credentials or other sensitive information.
