@@ -577,6 +577,7 @@ pub async fn simple_notarize(
     headers: HashMap<String, String>,
     _body: Option<String>,
     host: Option<String>,
+    domain: Option<String>,
     port: Option<u16>,
     notary_host: Option<String>,
     notary_port: Option<u16>,
@@ -615,39 +616,23 @@ pub async fn simple_notarize(
         }
     };
 
-    // Check if a custom host was provided
-    let (server_name, use_fixture) = match &host {
-        Some(host_str) => {
-            // Use the provided host instead of SERVER_DOMAIN
-            (host_str.clone(), host_str == SERVER_DOMAIN)
-        },
-        None => {
-            // Use the default SERVER_DOMAIN (tlsnotary.org)
-            (SERVER_DOMAIN.to_string(), true)
-        }
-    };
-
-    // Check if a custom port was provided
-    let server_port = if use_fixture {
-        // For the server fixture, use DEFAULT_FIXTURE_PORT (4000) or a specified port
-        port.unwrap_or_else(|| 
-            env::var("SERVER_PORT")
-                .map(|p| p.parse().expect("port should be valid integer"))
-                .unwrap_or(DEFAULT_FIXTURE_PORT)
-        )
-    } else {
-        // For external hosts, use the provided port or default to 443 (HTTPS)
-        port.unwrap_or(443)
-    };
-
-    // Determine the server host address
-    let server_host = if use_fixture {
+    // Determine the server host address - use provided or default to 127.0.0.1
+    let server_host = host.unwrap_or_else(|| 
         env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
-    } else {
-        server_name.clone()
-    };
+    );
     
-    println!("SimpleNotarize: Using server '{}:{}' with path '{}'", server_name, server_port, uri);
+    // Determine the TLS server name - use provided or default to tlsnotary.org
+    let server_name = domain.unwrap_or_else(|| SERVER_DOMAIN.to_string());
+    
+    // Use the default port for the server fixture (4000)
+    let server_port = port.unwrap_or_else(|| 
+        env::var("SERVER_PORT")
+            .map(|p| p.parse().expect("port should be valid integer"))
+            .unwrap_or(DEFAULT_FIXTURE_PORT)
+    );
+    
+    println!("SimpleNotarize: Connecting to server at {}:{} with TLS server name '{}' for path '{}'", 
+        server_host, server_port, server_name, uri);
 
     let notary_host_val: String = notary_host.unwrap_or_else(|| env::var("NOTARY_HOST").unwrap_or("127.0.0.1".into()));
     let notary_port_val: u16 = notary_port.unwrap_or_else(|| env::var("NOTARY_PORT")
@@ -683,9 +668,10 @@ pub async fn simple_notarize(
         .expect("Could not connect to notary. Make sure it is running.");
 
     // Set up protocol configuration for prover, using the server_name for TLS verification
-    // Prover configuration.
+    // Note: For now, always use SERVER_DOMAIN as the server name for TLS verification
+    // This will need to be updated for supporting external servers
     let prover_config = ProverConfig::builder()
-        .server_name(SERVER_DOMAIN) // TODO: For now, always use SERVER_DOMAIN as we only support the fixture
+        .server_name(SERVER_DOMAIN) // TODO: Use server_name once we support custom certificates
         .protocol_config(
             ProtocolConfig::builder()
                 // We must configure the amount of data we expect to exchange beforehand, which will
