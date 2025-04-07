@@ -99,7 +99,8 @@ pub fn configure(
     host: Option<String>,
     port: Option<u16>,
     tls_enabled: Option<bool>,
-    certs_dir: Option<PathBuf>,
+    tls_certificate: Option<PathBuf>,
+    tls_private_key: Option<PathBuf>,
 ) -> Result<(), Box<dyn Error>> {
     // Default configuration values
     let host = host.unwrap_or_else(|| "0.0.0.0".to_string());
@@ -111,31 +112,44 @@ pub fn configure(
     let expected_cert_path = "fixture/notary/notary.crt";
     let expected_key_path = "fixture/notary/notary.key";
     
-    // If TLS is enabled and certificates are provided, copy them to the expected location
-    if tls_enabled && certs_dir.is_some() {
-        let certs_directory = certs_dir.unwrap();
-        println!("TLS is enabled, copying certificates from: {}", certs_directory.display());
+    // Check if we need to copy certificate files
+    let cert_provided = tls_certificate.is_some();
+    let key_provided = tls_private_key.is_some();
+    
+    // If TLS is enabled and certificate or key is provided, validate that we have both
+    if tls_enabled && (cert_provided || key_provided) {
+        // Ensure both certificate and key are provided
+        if !cert_provided {
+            return Err("TLS is enabled and private key is provided, but certificate is missing. Please provide both.".into());
+        }
+        if !key_provided {
+            return Err("TLS is enabled and certificate is provided, but private key is missing. Please provide both.".into());
+        }
+        
+        let cert_path = tls_certificate.unwrap();
+        let key_path = tls_private_key.unwrap();
         
         // Check if the source files exist
-        let src_cert = certs_directory.join("notary.crt");
-        let src_key = certs_directory.join("notary.key");
-        
-        if !src_cert.exists() || !src_key.exists() {
-            return Err(format!(
-                "Certificate files not found. The certificate directory should contain 'notary.crt' and 'notary.key'. Looking for: {} and {}",
-                src_cert.display(), src_key.display()
-            ).into());
+        if !cert_path.exists() {
+            return Err(format!("Certificate file not found: {}", cert_path.display()).into());
         }
+        if !key_path.exists() {
+            return Err(format!("Private key file not found: {}", key_path.display()).into());
+        }
+        
+        println!("TLS is enabled, copying certificate files:");
+        println!("  From: {}", cert_path.display());
+        println!("  To:   {}", expected_cert_path);
+        println!("  From: {}", key_path.display());
+        println!("  To:   {}", expected_key_path);
         
         // Create the destination directory
         fs::create_dir_all(expected_fixture_dir)?;
         
         // Copy the certificate files
-        println!("Copying certificate to: {}", expected_cert_path);
-        fs::copy(&src_cert, expected_cert_path)?;
+        fs::copy(&cert_path, expected_cert_path)?;
+        fs::copy(&key_path, expected_key_path)?;
         
-        println!("Copying private key to: {}", expected_key_path);
-        fs::copy(&src_key, expected_key_path)?;
     } else if tls_enabled {
         println!("TLS is enabled, using default certificate paths.");
         println!("Make sure the certificate files exist at:");
