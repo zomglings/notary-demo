@@ -18,16 +18,12 @@ async fn main() -> Result<()> {
     
     // Initialize logging based on verbosity level
     let log_level = match cli.verbose {
-        0 => "info",
-        1 => "debug",
-        _ => "trace",
+        0 => env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
+        1 => env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "debug"),
+        _ => env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "trace"),
     };
     
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", log_level);
-    }
-    
-    env_logger::init();
+    env_logger::Builder::from_env(log_level).init();
     
     info!("TLSNotary Prover v{}", env!("CARGO_PKG_VERSION"));
     
