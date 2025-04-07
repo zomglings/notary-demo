@@ -125,6 +125,30 @@ Certificate options:
 - `--outdir`: Output directory for the certificates (required)
 - `--prefix`: Prefix for certificate filenames
 
+## Making HTTP Requests
+
+The `stamp request` command allows you to make arbitrary HTTP requests with custom methods, headers, and body content. This is useful for testing APIs and debugging.
+
+```sh
+# Make a simple GET request
+stamp request https://example.com
+
+# Make a request with custom headers and method
+stamp request https://api.example.com \
+  --method POST \
+  --header "Content-Type:application/json" \
+  --body '{"key": "value"}'
+  
+# Save the response to a file
+stamp request https://example.com --outfile response.txt
+```
+
+Options:
+- `--method`: HTTP method (GET, POST, PUT, DELETE, etc.)
+- `--header`: HTTP headers in format "key:value" (can be specified multiple times)
+- `--body`: Request body content
+- `--outfile`: File to save the response to (instead of printing to console)
+
 ## Proving API Calls with TLSNotary
 
 The `stamp` tool allows you to notarize arbitrary HTTPS API calls, create verifiable presentations with selective disclosure, and verify these presentations. This enables you to prove that an API returned specific data without revealing your credentials or other sensitive information.
