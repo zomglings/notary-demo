@@ -452,8 +452,9 @@ pub async fn direct_test(
 
     // Set up protocol configuration for prover.
     // Prover configuration.
+    let server_name_str = SERVER_DOMAIN; // Convert to &str
     let prover_config = ProverConfig::builder()
-        .server_name(SERVER_DOMAIN)
+        .server_name(server_name_str)
         .protocol_config(
             ProtocolConfig::builder()
                 // We must configure the amount of data we expect to exchange beforehand, which will
@@ -575,8 +576,9 @@ pub async fn simple_notarize(
     method: &str,
     headers: HashMap<String, String>,
     _body: Option<String>,
-    _notary_host: Option<String>,
-    _notary_port: Option<u16>,
+    hostname: Option<String>,
+    notary_host: Option<String>,
+    notary_port: Option<u16>,
     outfile_prefix: &str,
 ) -> Result<(), Box<dyn Error>> {
     // This example demonstrates how to use the Prover to acquire an attestation for
@@ -589,14 +591,13 @@ pub async fn simple_notarize(
     use hyper_util::rt::TokioIo;
     use tlsn_formats::spansy::Spanned;
     use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
-    use tls_server_fixture::SERVER_DOMAIN;
     use tlsn_core::{request::RequestConfig, transcript::TranscriptCommitConfig};
     use tlsn_formats::http::{DefaultHttpCommitter, HttpCommit, HttpTranscript};
 
     // Setting of the application server
     const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
 
-    // Extract path from URL
+    // Extract path from URL - if it's a full URL, extract just the path
     let uri = if url.contains("://") {
         let parts: Vec<&str> = url.split('/').collect();
         if parts.len() >= 4 {
@@ -612,12 +613,16 @@ pub async fn simple_notarize(
         }
     };
 
-    println!("SimpleNotarize: Using URI '{}'", uri);
+    // Use provided hostname or default to tlsnotary.org (server fixture)
+    let server_name = hostname.unwrap_or_else(|| "tlsnotary.org".to_string());
+    let use_fixture = server_name == "tlsnotary.org";
+    
+    println!("SimpleNotarize: Using server '{}' with path '{}'", server_name, uri);
 
-    let notary_host: String = env::var("NOTARY_HOST").unwrap_or("127.0.0.1".into());
-    let notary_port: u16 = env::var("NOTARY_PORT")
+    let notary_host_val: String = notary_host.unwrap_or_else(|| env::var("NOTARY_HOST").unwrap_or("127.0.0.1".into()));
+    let notary_port_val: u16 = notary_port.unwrap_or_else(|| env::var("NOTARY_PORT")
         .map(|port| port.parse().expect("port should be valid integer"))
-        .unwrap_or(7047);
+        .unwrap_or(7047));
     let server_host: String = env::var("SERVER_HOST").unwrap_or("127.0.0.1".into());
     let server_port: u16 = env::var("SERVER_PORT")
         .map(|port| port.parse().expect("port should be valid integer"))
@@ -625,8 +630,8 @@ pub async fn simple_notarize(
 
     // Build a client to connect to the notary server.
     let notary_client = NotaryClient::builder()
-        .host(notary_host)
-        .port(notary_port)
+        .host(notary_host_val)
+        .port(notary_port_val)
         // WARNING: Always use TLS to connect to notary server, except if notary is running locally
         // e.g. this example, hence `enable_tls` is set to False (else it always defaults to True).
         .enable_tls(false)
@@ -653,8 +658,9 @@ pub async fn simple_notarize(
 
     // Set up protocol configuration for prover.
     // Prover configuration.
+    let server_name_str = server_name.as_str(); // Convert to &str
     let prover_config = ProverConfig::builder()
-        .server_name(SERVER_DOMAIN)
+        .server_name(server_name_str)
         .protocol_config(
             ProtocolConfig::builder()
                 // We must configure the amount of data we expect to exchange beforehand, which will
@@ -672,8 +678,15 @@ pub async fn simple_notarize(
         .setup(notary_connection.compat())
         .await?;
 
-    // Open a TCP connection to the server.
-    let client_socket = tokio::net::TcpStream::connect((server_host, server_port)).await?;
+    // Open a TCP connection to the server - either fixture or custom host
+    let client_socket = if use_fixture {
+        println!("Using server fixture at {}:{}", server_host, server_port);
+        tokio::net::TcpStream::connect((server_host, server_port)).await?
+    } else {
+        // For non-fixture servers, assume standard ports (443 for HTTPS)
+        println!("Connecting to external server at {}", server_name);
+        tokio::net::TcpStream::connect((server_name.as_str(), 443)).await?
+    };
 
     // Bind the prover to the server connection.
     // The returned `mpc_tls_connection` is an MPC TLS connection to the server: all

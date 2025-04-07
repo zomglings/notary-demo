@@ -150,9 +150,13 @@ enum ProverCommands {
     
     /// Simple notarize version (exact copy of direct-test)
     SimpleNotarize {
-        /// URL to make the request to
+        /// URL or path to request
         #[arg(required = true)]
         url: String,
+        
+        /// Hostname to connect to (default: tlsnotary.org)
+        #[arg(long)]
+        hostname: Option<String>,
         
         /// HTTP method (GET, POST, etc.)
         #[arg(long, default_value = "GET")]
@@ -430,7 +434,7 @@ fn main() {
                         std::process::exit(1);
                     }
                 }
-                ProverCommands::SimpleNotarize { url, method, header, body, notary_host, notary_port, outfile } => {
+                ProverCommands::SimpleNotarize { url, hostname, method, header, body, notary_host, notary_port, outfile } => {
                     // Parse headers
                     let mut headers = HashMap::new();
                     for h in header {
@@ -442,8 +446,8 @@ fn main() {
                         }
                     }
                     
-                    // Call simple_notarize with the provided method
-                    if let Err(err) = rt.block_on(prover::simple_notarize(&url, &method, headers, body, notary_host, notary_port, &outfile)) {
+                    // Call simple_notarize with the provided method and hostname
+                    if let Err(err) = rt.block_on(prover::simple_notarize(&url, &method, headers, body, hostname, notary_host, notary_port, &outfile)) {
                         eprintln!("Error during simple notarization: {}", err);
                         std::process::exit(1);
                     }
