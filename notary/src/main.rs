@@ -15,6 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             host, 
             api_port,
             notary_port,
+            disable_mpc,
             database, 
             log_level,
             pretty_logging 
@@ -61,16 +62,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let proofs = database.list_all_proofs()?;
             log::info!("Found {} existing notarized proofs", proofs.len());
             
-            // Start the TLSNotary service in a separate task
-            let notary_host = host.clone();
-            let notary_database = database.clone();
-            tokio::spawn(async move {
-                let tlsn_service = TlsnService::new(notary_host, notary_port, notary_database);
-                if let Err(e) = tlsn_service.run().await {
-                    log::error!("TLSNotary service error: {}", e);
-                }
-            });
-            log::info!("TLSNotary service started on {}:{}", host, notary_port);
+            // Start the TLSNotary service in a separate task if not disabled
+            if !disable_mpc && notary_port > 0 {
+                let notary_host = host.clone();
+                let notary_database = database.clone();
+                tokio::spawn(async move {
+                    let tlsn_service = TlsnService::new(notary_host, notary_port, notary_database);
+                    if let Err(e) = tlsn_service.run().await {
+                        log::error!("TLSNotary service error: {}", e);
+                    }
+                });
+                log::info!("TLSNotary service started on {}:{}", host, notary_port);
+            } else {
+                log::info!("TLSNotary MPC service is disabled, using official notary-server instead");
+            }
             
             // Start the API server
             let api_address = format!("{}:{}", host, api_port);

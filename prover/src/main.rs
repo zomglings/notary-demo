@@ -35,12 +35,11 @@ async fn main() -> Result<()> {
             body, 
             notary_host, 
             notary_port,
-            notary_api_port,
             selective_disclosure, 
             output_file 
         } => {
             // Create the prover client
-            let mut prover = TlsnProver::new(notary_host, notary_port, notary_api_port);
+            let mut prover = TlsnProver::new(notary_host, notary_port);
             
             // Execute notarization request
             let result = prover.notarize(

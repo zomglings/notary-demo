@@ -33,7 +33,6 @@ struct MpcParams {
 pub struct TlsnProver {
     notary_host: String, 
     notary_port: u16,
-    notary_api_port: u16,
 }
 
 /// Creates a default crypto provider for TLSNotary
@@ -81,11 +80,10 @@ async fn fetch_mpc_params(host: &str, api_port: u16) -> Result<MpcParams, Prover
 }
 
 impl TlsnProver {
-    pub fn new(notary_host: String, notary_port: u16, notary_api_port: u16) -> Self {
+    pub fn new(notary_host: String, notary_port: u16) -> Self {
         Self {
             notary_host,
             notary_port,
-            notary_api_port,
         }
     }
     
@@ -129,7 +127,8 @@ impl TlsnProver {
             })?;
             
         // Build NotaryClient
-        info!("FLOW: [1/10] Setting up NotaryClient for {}:{}", self.notary_host, self.notary_port);
+        info!("FLOW: [1/10] Setting up NotaryClient for {}:{} (official notary server)", 
+              self.notary_host, self.notary_port);
         let notary_client = NotaryClient::builder()
             .host(&self.notary_host)
             .port(self.notary_port)

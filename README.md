@@ -5,86 +5,95 @@ This is a demo of the TLSNotary protocol, which allows for the notarization of T
 ## Project Structure
 
 - `/common` - Common code shared between the notary and prover
-- `/notary` - The notary service that participates in the MPC protocol and provides attestations
-- `/prover` - The prover client that requests notarization for TLS sessions
+- `/notary` - Our custom API for listing and retrieving notarization proofs
+- `/prover` - The prover client that uses the official TLSNotary server
 
-## Components
+## Components and Architecture
 
-### Notary
+This project uses a hybrid architecture with two servers:
 
-The notary server has two key components:
+1. **Official notary-server (port 7047)** - Handles the MPC protocol:
+   - Provided by the official TLSNotary project
+   - Performs the cryptographic notarization process
+   - Works with the official NotaryClient library
 
-1. **API Server (port 7151)** - HTTP server that provides:
-   - `/api/mpcparams` - Endpoint to discover MPC protocol parameters
+2. **Our custom API server (port 7048)** - Provides additional features:
    - `/proofs` - List and retrieve notarization proofs
    - `/verifier/verify` - Verify notarization proofs
+   - Database storage and management
 
-2. **TLSNotary Server (port 7150)** - MPC protocol server that performs the actual notarization
+3. **Prover client** - Connects to the official notary server:
+   - Uses the NotaryClient library to communicate with the notary server
+   - Performs the TLS connection to the target site
+   - Supports selective disclosure of transcript parts
 
-### Prover
+## Setup and Installation
 
-The prover client:
-
-1. Discovers MPC parameters from the notary API
-2. Connects to the TLSNotary server to execute the MPC protocol
-3. Performs a TLS connection to the target server
-4. Notarizes the TLS session
-5. Optionally supports selective disclosure of transcript parts
-
-## Running the Demo
-
-### Start the Notary Server
+### 1. Install the Official Notary Server
 
 ```bash
-cargo run --bin notary --release -- --host 127.0.0.1 --port 7150 --api-port 7151
+# Install the official notary-server
+cargo install --git https://github.com/tlsnotary/tlsn.git notary-server
 ```
 
-### Run the Prover Client
+### 2. Start the Official Notary Server
 
 ```bash
-cargo run --bin prover --release -- \
+# Run on the default port 7047
+notary-server --port 7047
+```
+
+### 3. Start Our Custom API Server
+
+```bash
+# Run our API server on port 7048
+cargo run --bin notary -- server -H 127.0.0.1 --api-port 7048 --disable-mpc
+```
+
+### 4. Run the Prover Client
+
+```bash
+cargo run --bin prover -- -v notarize https://example.com \
+  --method GET \
   --notary-host 127.0.0.1 \
-  --notary-port 7150 \
-  --notary-api-port 7151 \
-  --url https://example.com \
-  --method GET
+  --notary-port 7047
 ```
 
 You can add selective disclosure with the `--selective-disclosure` option:
 
 ```bash
-cargo run --bin prover --release -- \
-  --notary-host 127.0.0.1 \
-  --notary-port 7150 \
-  --notary-api-port 7151 \
-  --url https://example.com \
+cargo run --bin prover -- -v notarize https://example.com \
   --method GET \
+  --notary-host 127.0.0.1 \
+  --notary-port 7047 \
   --selective-disclosure "Authorization:REDACT" \
   --selective-disclosure "token:REDACT"
 ```
 
-## Implementation
-
-This demo uses the official TLSNotary library with two key components:
-
-1. `notary-server` - Provides the notary service implementation
-2. `notary-client` - Client for connecting to the notary service
-
-The implementation follows the attestation example from the TLSNotary repository.
-
-## Architecture
+## Architecture Diagram
 
 ```
-+------------+             +------------+            +--------------+
-|            |   HTTP API  |            |   HTTPS    |              |
-|   Prover   |<----------->|   Notary   |<---------->| Target Site  |
-|            |   (7151)    |            |   (443)    |              |
-+------------+             +------------+            +--------------+
-      ^                          ^
-      |                          |
-      |      MPC Protocol        |
-      |       (7150)             |
-      +--------------------------+
+                                  +----------------+
+                                  |                |
+                                  | Target Website |
+                                  |                |
+                                  +----------------+
+                                          ^
+                                          |
+                                          | HTTPS (443)
+                                          |
+                                          v
++----------------+        MPC       +-----------------+
+|                | <------------->  |                 |
+|  Prover Client |      (7047)      | Official Notary |
+|                |                  |     Server      |
++----------------+                  +-----------------+
+        |
+        |                          +-----------------+
+        |        REST API          |                 |
+        +----------------------->  |   Custom API    |
+                 (7048)            |     Server      |
+                                   +-----------------+
 ```
 
 ## Additional Resources

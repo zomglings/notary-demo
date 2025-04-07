@@ -19,12 +19,16 @@ pub enum Commands {
         host: String,
 
         /// Port for the REST API server
-        #[arg(long, default_value = "7151")]
+        #[arg(long, default_value = "7048")]
         api_port: u16,
 
-        /// Port for the notary MPC protocol
-        #[arg(long, default_value = "7150")]
+        /// Port for the notary MPC protocol (0 to disable)
+        #[arg(long, default_value = "0")]
         notary_port: u16,
+        
+        /// Disable custom MPC implementation (use official notary-server instead)
+        #[arg(long, default_value = "true")]
+        disable_mpc: bool,
 
         /// Path to the SQLite database file
         #[arg(short, long, default_value = "notary_proofs.db")]
