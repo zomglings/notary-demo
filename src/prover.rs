@@ -586,7 +586,7 @@ pub async fn direct_test(
 pub async fn simple_notarize(
     url: &str,
     _method: &str,
-    _headers: HashMap<String, String>,
+    headers: HashMap<String, String>,
     _body: Option<String>,
     _notary_host: Option<String>,
     _notary_port: Option<u16>,
@@ -707,7 +707,7 @@ pub async fn simple_notarize(
     tokio::spawn(connection);
 
     // Build a simple HTTP request with common headers
-    let request_builder = Request::builder()
+    let mut request_builder = Request::builder()
         .uri(&uri)
         .header("Host", SERVER_DOMAIN)
         .header("Accept", "*/*")
@@ -716,6 +716,17 @@ pub async fn simple_notarize(
         .header("Accept-Encoding", "identity")
         .header("Connection", "close")
         .header("User-Agent", USER_AGENT);
+        
+    // Add custom headers
+    let reserved_headers = ["host", "accept", "accept-encoding", "connection", "user-agent"];
+    for (key, value) in headers {
+        if !reserved_headers.contains(&key.to_lowercase().as_str()) {
+            println!("Adding custom header: {}:{}", key, value);
+            request_builder = request_builder.header(&key, &value);
+        } else {
+            println!("Skipping reserved header: {}:{}", key, value);
+        }
+    }
 
     let request = request_builder.body(Empty::<Bytes>::new())?;
 
