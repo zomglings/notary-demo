@@ -167,25 +167,13 @@ pub async fn notarize(
     
     println!("Building HTTP request for URI: {}", uri);
     
-    // Build HTTP request - now following direct_test exactly
-    // Start with the base request builder with required headers
-    let mut request_builder = Request::builder()
-        .uri(&uri)
-        .header("Host", server_name)
-        .header("Accept", "*/*")
-        .header("Accept-Encoding", "identity")
-        .header("Connection", "close")
-        .header("User-Agent", USER_AGENT);
+    // Build HTTP request using ONLY the headers provided via CLI, with no automatic additions
+    let mut request_builder = Request::builder().uri(&uri);
     
-    // Add custom headers, skipping any that would override the required ones
-    let reserved_headers = ["host", "accept", "accept-encoding", "connection", "user-agent"];
-    for (key, value) in headers {
-        if !reserved_headers.contains(&key.to_lowercase().as_str()) {
-            println!("Adding custom header: {}:{}", key, value);
-            request_builder = request_builder.header(&key, &value);
-        } else {
-            println!("Skipping reserved header: {}:{}", key, value);
-        }
+    // Add ONLY the headers from CLI - no default/essential headers
+    for (key, value) in &headers {
+        println!("Adding header: {}:{}", key, value);
+        request_builder = request_builder.header(key, value);
     }
     
     // Handle method if it's not GET
@@ -194,7 +182,6 @@ pub async fn notarize(
         request_builder = request_builder.method(hyper::Method::from_str(method)?);
     }
     
-    // Create the request with empty body - exactly as in direct_test
     let request = request_builder.body(Empty::<Bytes>::new())?;
     
     println!("Starting an MPC TLS connection with the server");
@@ -706,30 +693,13 @@ pub async fn simple_notarize(
     // Spawn the HTTP task to be run concurrently in the background.
     tokio::spawn(connection);
 
-    // Build HTTP request using only provided headers
+    // Build HTTP request using ONLY the headers provided via CLI, with no automatic additions
     let mut request_builder = Request::builder().uri(&uri);
     
-    // Set of essential headers and their default values
-    let essential_headers = [
-        ("host", SERVER_DOMAIN),
-        ("accept", "*/*"),
-        ("accept-encoding", "identity"), // identity = no compression (required for TLSNotary)
-        ("connection", "close"),
-        ("user-agent", USER_AGENT)
-    ];
-    
-    // Add headers from CLI first, then add any missing essential headers
+    // Add ONLY the headers from CLI - no default/essential headers
     for (key, value) in &headers {
-        println!("Adding provided header: {}:{}", key, value);
+        println!("Adding header: {}:{}", key, value);
         request_builder = request_builder.header(key, value);
-    }
-    
-    // Check if any essential headers are missing and add them
-    for (name, default_value) in essential_headers {
-        if !headers.iter().any(|(k, _)| k.to_lowercase() == name) {
-            println!("Adding essential header: {}:{}", name, default_value);
-            request_builder = request_builder.header(name, default_value);
-        }
     }
 
     let request = request_builder.body(Empty::<Bytes>::new())?;
