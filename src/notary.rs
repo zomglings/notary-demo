@@ -6,7 +6,7 @@ const NOTARY_SERVER_PATH: &str = "vendor/tlsn/crates/notary/server";
 const DEFAULT_BIN_NAME: &str = "notary-server";
 
 /// Builds the notary server from the git submodule
-pub async fn build(outfile: Option<PathBuf>) -> Result<PathBuf, Box<dyn Error>> {
+pub async fn build(outfile: PathBuf) -> Result<PathBuf, Box<dyn Error>> {
     // Step 1: Ensure the submodule is initialized
     println!("Checking git submodule...");
     if !PathBuf::from(NOTARY_SERVER_PATH).exists() {
@@ -33,57 +33,36 @@ pub async fn build(outfile: Option<PathBuf>) -> Result<PathBuf, Box<dyn Error>> 
         return Err("Failed to build notary server".into());
     }
     
-    // Determine the binary path
+    // Get the path to the built binary
     let default_bin_path = PathBuf::from(format!("vendor/tlsn/target/release/{}", DEFAULT_BIN_NAME));
     
-    let bin_path = if let Some(out_file) = outfile {
-        // Create parent directories if they don't exist
-        if let Some(parent) = out_file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        
-        // Copy the binary to the specified output file path
-        println!("Copying binary to: {}", out_file.display());
-        std::fs::copy(&default_bin_path, &out_file)?;
-        
-        out_file
-    } else {
-        // Use the default location
-        default_bin_path
-    };
+    // Create parent directories if they don't exist
+    if let Some(parent) = outfile.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     
-    println!("Notary server built successfully: {}", bin_path.display());
-    Ok(bin_path)
+    // Copy the binary to the specified output file path
+    println!("Copying binary to: {}", outfile.display());
+    std::fs::copy(&default_bin_path, &outfile)?;
+    
+    println!("Notary server built successfully: {}", outfile.display());
+    Ok(outfile)
 }
 
 /// Runs the notary server
 pub async fn serve(
     config_path: Option<PathBuf>, 
     certs_dir: Option<PathBuf>,
-    notary_bin: Option<PathBuf>
+    notary_bin: PathBuf
 ) -> Result<(), Box<dyn Error>> {
-    // Determine the notary server binary path
-    let default_bin_path = PathBuf::from(format!("vendor/tlsn/target/release/{}", DEFAULT_BIN_NAME));
-    
-    let bin_path = if let Some(bin) = notary_bin {
-        // Use the provided binary path
-        if !bin.exists() {
-            return Err(format!("Notary server binary not found at: {}", bin.display()).into());
-        }
-        bin
-    } else {
-        // Check if we need to build it
-        if !default_bin_path.exists() {
-            println!("Notary server binary not found, building it first...");
-            build(None).await?
-        } else {
-            default_bin_path
-        }
-    };
+    // Check if the binary exists
+    if !notary_bin.exists() {
+        return Err(format!("Notary server binary not found at: {}", notary_bin.display()).into());
+    }
 
-    // Step 3: Run the notary server with appropriate config
-    println!("Starting TLSNotary server: {}", bin_path.display());
-    let mut run_cmd = Command::new(&bin_path);
+    // Run the notary server with appropriate config
+    println!("Starting TLSNotary server: {}", notary_bin.display());
+    let mut run_cmd = Command::new(notary_bin);
     
     // Add config file if provided
     if let Some(config) = config_path {

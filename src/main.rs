@@ -43,9 +43,9 @@ enum Commands {
 enum NotaryCommands {
     /// Build the TLSNotary server from source
     Build {
-        /// Path to the output binary file (default: vendor/tlsn/target/release/notary-server)
-        #[arg(long)]
-        outfile: Option<PathBuf>,
+        /// Path to the output binary file
+        #[arg(long, required = true)]
+        outfile: PathBuf,
     },
     /// Run a TLSNotary server
     Serve {
@@ -57,9 +57,9 @@ enum NotaryCommands {
         #[arg(long)]
         certs_dir: Option<PathBuf>,
         
-        /// Path to the pre-built notary server binary
-        #[arg(long)]
-        notary_bin: Option<PathBuf>,
+        /// Path to the notary server binary
+        #[arg(long, required = true)]
+        notary_bin: PathBuf,
     },
 }
 
