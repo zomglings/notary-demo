@@ -148,14 +148,35 @@ pub fn configure(
     let port = port.unwrap_or(7047);
     let tls_enabled = tls_enabled.unwrap_or(false);
     
-    // Handle certificate paths
-    let certificate_path = tls_certificate.map(|p| p.to_string_lossy().to_string());
-    let private_key_path = tls_private_key.map(|p| p.to_string_lossy().to_string());
+    // Format certificate paths for YAML
+    let mut certificate_path_yaml = "null".to_string();
+    let mut private_key_path_yaml = "null".to_string();
     
     // If TLS is enabled, make sure certificate and key are provided
     if tls_enabled {
-        if certificate_path.is_none() || private_key_path.is_none() {
-            println!("Warning: TLS is enabled but certificate or key path is missing.");
+        if let Some(path) = &tls_certificate {
+            let path_str = path.to_string_lossy();
+            certificate_path_yaml = if path_str.contains(' ') {
+                format!("\"{}\"", path_str)
+            } else {
+                path_str.to_string()
+            };
+        } else {
+            println!("Warning: TLS is enabled but certificate path is missing.");
+        }
+        
+        if let Some(path) = &tls_private_key {
+            let path_str = path.to_string_lossy();
+            private_key_path_yaml = if path_str.contains(' ') {
+                format!("\"{}\"", path_str)
+            } else {
+                path_str.to_string()
+            };
+        } else {
+            println!("Warning: TLS is enabled but private key path is missing.");
+        }
+        
+        if tls_certificate.is_none() || tls_private_key.is_none() {
             println!("Make sure the files exist at the locations specified in the configuration.");
         }
     }
@@ -168,6 +189,19 @@ pub fn configure(
     let notary_public_key_path = notary_public_key
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "fixture/notary/notary.pub".to_string());
+
+    // Format paths for YAML
+    let notary_private_key_yaml = if notary_private_key_path.contains(' ') {
+        format!("\"{}\"", notary_private_key_path)
+    } else {
+        notary_private_key_path
+    };
+    
+    let notary_public_key_yaml = if notary_public_key_path.contains(' ') {
+        format!("\"{}\"", notary_public_key_path)
+    } else {
+        notary_public_key_path
+    };
 
     // Create the config file content using the TLSNotary server's expected format
     let config_content = format!(r#"---
@@ -197,16 +231,16 @@ tls:
   certificate_pem_path: {}
 
 notary_key:
-  private_key_pem_path: "{}"
-  public_key_pem_path: "{}"
+  private_key_pem_path: {}
+  public_key_pem_path: {}
 "#, 
     host, 
     port, 
     tls_enabled,
-    private_key_path.map_or("null".to_string(), |p| format!("\"{}\"", p)),
-    certificate_path.map_or("null".to_string(), |p| format!("\"{}\"", p)),
-    format!("\"{}\"", notary_private_key_path),
-    format!("\"{}\"", notary_public_key_path)
+    private_key_path_yaml,
+    certificate_path_yaml,
+    notary_private_key_yaml,
+    notary_public_key_yaml
 );
 
     // Create parent directories if they don't exist
