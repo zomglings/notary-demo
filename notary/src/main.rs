@@ -74,45 +74,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
                 log::info!("TLSNotary service started on {}:{}", host, notary_port);
             } else {
-                // Start the official notary-server as a subprocess
+                // Start the official notary-server directly using cargo run
                 log::info!("Starting official notary-server on port 7047...");
                 
-                // Check if notary-server is installed
-                match std::process::Command::new("which")
-                    .arg("notary-server")
-                    .output() {
+                // Run the official notary server using cargo run
+                let child = std::process::Command::new("cargo")
+                    .args(&[
+                        "run", 
+                        "--quiet",
+                        "--package", "notary-server",
+                        "--",
+                        "--port", "7047"
+                    ])
+                    .current_dir(std::env::current_dir().unwrap())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn();
                     
-                    Ok(output) => {
-                        if !output.status.success() {
-                            log::warn!("Official notary-server not found in PATH. Please install it with: cargo install --git https://github.com/tlsnotary/tlsn.git notary-server");
-                        } else {
-                            // Start the official notary server
-                            let child = std::process::Command::new("notary-server")
-                                .arg("--port")
-                                .arg("7047")
-                                .stdout(std::process::Stdio::piped())
-                                .stderr(std::process::Stdio::piped())
-                                .spawn();
-                                
-                            match child {
-                                Ok(child) => {
-                                    log::info!("Official notary-server started with PID: {}", child.id());
-                                    
-                                    // Spawn a task to handle the output
-                                    let child_id = child.id();
-                                    tokio::spawn(async move {
-                                        // The child will be terminated when our process exits
-                                        log::info!("Official notary-server (PID: {}) will be terminated when this process exits", child_id);
-                                    });
-                                },
-                                Err(e) => {
-                                    log::error!("Failed to start official notary-server: {}", e);
-                                }
-                            }
-                        }
+                match child {
+                    Ok(child) => {
+                        log::info!("Official notary-server started with PID: {}", child.id());
+                        
+                        // Spawn a task to handle the output
+                        let child_id = child.id();
+                        tokio::spawn(async move {
+                            // The child will be terminated when our process exits
+                            log::info!("Official notary-server (PID: {}) will be terminated when this process exits", child_id);
+                        });
                     },
                     Err(e) => {
-                        log::error!("Error checking for notary-server: {}", e);
+                        log::error!("Failed to start official notary-server: {}", e);
+                        log::warn!("Will continue without official notary server. Make sure it's installed and started separately.");
                     }
                 }
             }
