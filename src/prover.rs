@@ -407,25 +407,33 @@ pub async fn direct_test(
     uri: &str,
     outfile_prefix: &str,
 ) -> Result<(), Box<dyn Error>> {
+    // This example demonstrates how to use the Prover to acquire an attestation for
+    // an HTTP request sent to example.com. The attestation and secrets are saved to
+    // disk.
+    use std::env;
+
     use http_body_util::Empty;
     use hyper::{body::Bytes, Request, StatusCode};
     use hyper_util::rt::TokioIo;
-    use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
     use tlsn_formats::spansy::Spanned;
-    
-    // Constants copied from the example
+    use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
+    use tls_server_fixture::SERVER_DOMAIN;
+    use tlsn_core::{request::RequestConfig, transcript::TranscriptCommitConfig};
+    use tlsn_formats::http::{DefaultHttpCommitter, HttpCommit, HttpTranscript};
+
+    // Setting of the application server
     const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
 
-    let notary_host: String = std::env::var("NOTARY_HOST").unwrap_or("127.0.0.1".into());
-    let notary_port: u16 = std::env::var("NOTARY_PORT")
+    println!("DirectTest: Using URI '{}'", uri);
+
+    let notary_host: String = env::var("NOTARY_HOST").unwrap_or("127.0.0.1".into());
+    let notary_port: u16 = env::var("NOTARY_PORT")
         .map(|port| port.parse().expect("port should be valid integer"))
         .unwrap_or(7047);
-    let server_host: String = std::env::var("SERVER_HOST").unwrap_or("127.0.0.1".into());
-    let server_port: u16 = std::env::var("SERVER_PORT")
+    let server_host: String = env::var("SERVER_HOST").unwrap_or("127.0.0.1".into());
+    let server_port: u16 = env::var("SERVER_PORT")
         .map(|port| port.parse().expect("port should be valid integer"))
         .unwrap_or(DEFAULT_FIXTURE_PORT);
-
-    println!("DirectTest: Starting with URI '{}' using exact example code", uri);
 
     // Build a client to connect to the notary server.
     let notary_client = NotaryClient::builder()
@@ -527,25 +535,21 @@ pub async fn direct_test(
 
     // Parse the HTTP transcript.
     let transcript = HttpTranscript::parse(prover.transcript())?;
-    
-    // Log information about the body content
-    if let Some(response) = transcript.responses.first() {
-        if let Some(body) = &response.body {
-            let body_content = &body.content;
-            let body_bytes = body_content.span().as_bytes();
-            let body_str = String::from_utf8_lossy(body_bytes);
-            
-            match body_content {
-                tlsn_formats::http::BodyContent::Json(_json) => {
-                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_str) {
-                        println!("Response JSON: {}", serde_json::to_string_pretty(&parsed).unwrap_or_default());
-                    }
-                }
-                _ => {
-                    println!("Response body: {}", body_str);
-                }
-            }
+
+    // dbg!(&transcript);
+
+    let body_content = &transcript.responses[0].body.as_ref().unwrap().content;
+    let body = String::from_utf8_lossy(body_content.span().as_bytes());
+
+    match body_content {
+        tlsn_formats::http::BodyContent::Json(_json) => {
+            let parsed = serde_json::from_str::<serde_json::Value>(&body)?;
+            println!("{}", serde_json::to_string_pretty(&parsed)?);
         }
+        tlsn_formats::http::BodyContent::Unknown(_span) => {
+            println!("{}", &body);
+        }
+        _ => {}
     }
 
     // Commit to the transcript.
