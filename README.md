@@ -156,7 +156,7 @@ Options:
 
 ### HTTP/0.9 Support
 
-For testing with the TLSNotary server fixture, use the special header `X-Use-HTTP09:true` to enable HTTP/0.9 mode, which uses a direct TCP connection with simple HTTP protocol formatting. This is particularly useful for the TLSNotary server fixture, which uses HTTP/0.9.
+For testing with the TLSNotary server fixture, use the special header `X-Use-HTTP09:true` to enable HTTP/0.9 mode, which uses a direct TCP connection with simple HTTP protocol formatting.
 
 ```sh
 # Testing the TLSNotary server fixture (running on port 4000)
@@ -172,7 +172,28 @@ cargo run -- request http://127.0.0.1:4000 \
   --body '{"test":"data"}'
 ```
 
-**Note about the Server Fixture**: The TLSNotary server fixture is a minimal test server designed specifically for testing the TLSNotary protocol. It responds with a simple " 2" message regardless of the endpoint, method, or headers used. This is expected behavior as the fixture focuses on providing a consistent, simple response for testing TLS notarization rather than serving real content.
+### TLS Server Fixture Access
+
+For direct TLS access to the server fixture (including JSON endpoints), use the `raw-request` command:
+
+```sh
+# Get JSON data from the fixture
+cargo run -- raw-request --path /formats/json
+
+# Get HTML data
+cargo run -- raw-request --path /formats/html
+
+# Save response to a file
+cargo run -- raw-request --path /formats/json --outfile response.json
+```
+
+The server fixture includes several endpoints:
+- `/formats/json` - Returns structured JSON data
+- `/formats/html` - Returns HTML content
+- `/protected` - A protected endpoint requiring authentication
+- `/` - Returns a simple "Hello, World!" message
+
+**Note about the Server Fixture**: The TLSNotary server fixture is a TLS server providing test endpoints for the TLSNotary protocol. When accessed with raw HTTP/0.9, it responds with a simple " 2" message. To get the actual JSON content, you must use the TLS connection (via the `raw-request` command) or the TLSNotary protocol.
 
 ## Proving API Calls with TLSNotary
 

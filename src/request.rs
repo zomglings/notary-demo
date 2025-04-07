@@ -145,24 +145,88 @@ async fn make_http09_request(
     // Send the request
     stream.write_all(request.as_bytes()).await?;
     
-    // Read the response
+    // Read the response with timeout
     let mut response_bytes = Vec::new();
-    stream.read_to_end(&mut response_bytes).await?;
+    let mut buffer = vec![0u8; 8192]; // 8KB buffer for each read
     
-    println!("Received {} bytes from server", response_bytes.len());
+    // Set a read timeout
+    let mut attempts = 0;
+    let max_attempts = 5;
     
-    // Handle body output
+    // Read in a loop until we get data or timeout
+    loop {
+        match stream.read(&mut buffer).await {
+            Ok(0) => {
+                // Connection closed by server with no data
+                if response_bytes.is_empty() && attempts == 0 {
+                    println!("Server closed connection without sending data");
+                }
+                break;
+            }
+            Ok(n) => {
+                // Got some data
+                response_bytes.extend_from_slice(&buffer[..n]);
+                println!("Received {} bytes in this chunk", n);
+                
+                // If we've received enough data or no more is coming, exit
+                if n < buffer.len() || attempts >= max_attempts {
+                    break;
+                }
+                
+                attempts += 1;
+            }
+            Err(e) => {
+                println!("Error reading from server: {}", e);
+                break;
+            }
+        }
+    }
+    
+    println!("Received {} bytes total from server", response_bytes.len());
+    
+    // Print the raw hex data for debugging
+    println!("Raw response (first 100 bytes):");
+    let display_len = std::cmp::min(100, response_bytes.len());
+    for i in 0..display_len {
+        print!("{:02x} ", response_bytes[i]);
+        if (i + 1) % 16 == 0 {
+            println!();
+        }
+    }
+    println!();
+    
+    // Check if response is a valid HTTP response
+    let response_str = String::from_utf8_lossy(&response_bytes);
+    if response_str.starts_with("HTTP/") {
+        println!("Received HTTP response with headers");
+        
+        // Try to split headers and body
+        if let Some(header_end) = response_str.find("\r\n\r\n") {
+            let headers = &response_str[..header_end];
+            let body = &response_bytes[header_end + 4..];
+            
+            println!("\nHeaders:\n{}", headers);
+            
+            // Handle body
+            match String::from_utf8(body.to_vec()) {
+                Ok(body_text) => println!("\nBody:\n{}", body_text),
+                Err(_) => println!("\nBody: <binary data> ({} bytes)", body.len()),
+            }
+        }
+    } else {
+        // Treat as raw HTTP/0.9 response (no headers)
+        println!("\nRaw HTTP/0.9 response:");
+        match String::from_utf8(response_bytes.clone()) {
+            Ok(body_text) => println!("{}", body_text),
+            Err(_) => println!("<binary data> ({} bytes)", response_bytes.len()),
+        }
+    }
+    
+    // Handle file output if requested
     if let Some(output_path) = outfile {
-        // Save to file
         let mut file = File::create(output_path.clone())?;
         file.write_all(&response_bytes)?;
         println!("Response saved to: {}", output_path.display());
-    } else {
-        // Print to console
-        match String::from_utf8(response_bytes.clone()) {
-            Ok(body_text) => println!("\nResponse:\n{}", body_text),
-            Err(_) => println!("Response is binary data ({} bytes)", response_bytes.len()),
-        }
     }
     
     Ok(())

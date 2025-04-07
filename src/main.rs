@@ -6,6 +6,7 @@ mod certs;
 mod inspect;
 mod notary;
 mod prover;
+mod raw_request;
 mod request;
 
 #[derive(Parser)]
@@ -78,6 +79,28 @@ enum Commands {
         /// Path to the secrets file (optional)
         #[arg(long)]
         secrets: Option<PathBuf>,
+    },
+    /// Make a raw TLS request to the server fixture
+    RawRequest {
+        /// Host to connect to (usually 127.0.0.1)
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        
+        /// Port to connect to
+        #[arg(long, default_value = "4000")]
+        port: u16,
+        
+        /// Path to request (e.g., /formats/json)
+        #[arg(long, required = true)]
+        path: String,
+        
+        /// Server name for TLS (e.g., tlsnotary.org)
+        #[arg(long, default_value = "tlsnotary.org")]
+        server_name: String,
+        
+        /// File to save the response to
+        #[arg(long)]
+        outfile: Option<PathBuf>,
     },
 }
 
@@ -281,6 +304,22 @@ fn main() {
             // Inspect attestation and secrets
             if let Err(err) = rt.block_on(inspect::inspect_attestation(attestation, secrets)) {
                 eprintln!("Error inspecting attestation: {}", err);
+                std::process::exit(1);
+            }
+        },
+        Commands::RawRequest { host, port, path, server_name, outfile } => {
+            // Create runtime for async code
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(err) => {
+                    eprintln!("Error creating Tokio runtime: {}", err);
+                    std::process::exit(1);
+                }
+            };
+            
+            // Make raw TLS request
+            if let Err(err) = rt.block_on(raw_request::make_raw_tls_request(&host, port, &path, &server_name, outfile)) {
+                eprintln!("Error making raw TLS request: {}", err);
                 std::process::exit(1);
             }
         }
