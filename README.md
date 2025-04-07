@@ -141,6 +141,11 @@ stamp request https://api.example.com \
   
 # Save the response to a file
 stamp request https://example.com --outfile response.txt
+
+# Connect to the TLSNotary server fixture using HTTP/0.9
+stamp request http://127.0.0.1:4000 \
+  --header "Host:tlsnotary.org" \
+  --header "X-Use-HTTP09:true"
 ```
 
 Options:
@@ -148,6 +153,10 @@ Options:
 - `--header`: HTTP headers in format "key:value" (can be specified multiple times)
 - `--body`: Request body content
 - `--outfile`: File to save the response to (instead of printing to console)
+
+### HTTP/0.9 Support
+
+For testing with the TLSNotary server fixture, use the special header `X-Use-HTTP09:true` to enable HTTP/0.9 mode, which uses a direct TCP connection with simple HTTP protocol formatting. This is particularly useful for the TLSNotary server fixture, which uses HTTP/0.9.
 
 ## Proving API Calls with TLSNotary
 

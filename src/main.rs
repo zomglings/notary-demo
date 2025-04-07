@@ -55,7 +55,8 @@ enum Commands {
         #[arg(long, default_value = "GET")]
         method: String,
         
-        /// HTTP headers in format "key:value"
+        /// HTTP headers in format "key:value" 
+        /// Use X-Use-HTTP09 header to force HTTP/0.9 mode for server fixture
         #[arg(long)]
         header: Vec<String>,
         
