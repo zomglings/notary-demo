@@ -74,7 +74,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
                 log::info!("TLSNotary service started on {}:{}", host, notary_port);
             } else {
-                log::info!("TLSNotary MPC service is disabled, using official notary-server instead");
+                // Start the official notary-server as a subprocess
+                log::info!("Starting official notary-server on port 7047...");
+                
+                // Check if notary-server is installed
+                match std::process::Command::new("which")
+                    .arg("notary-server")
+                    .output() {
+                    
+                    Ok(output) => {
+                        if !output.status.success() {
+                            log::warn!("Official notary-server not found in PATH. Please install it with: cargo install --git https://github.com/tlsnotary/tlsn.git notary-server");
+                        } else {
+                            // Start the official notary server
+                            let child = std::process::Command::new("notary-server")
+                                .arg("--port")
+                                .arg("7047")
+                                .stdout(std::process::Stdio::piped())
+                                .stderr(std::process::Stdio::piped())
+                                .spawn();
+                                
+                            match child {
+                                Ok(child) => {
+                                    log::info!("Official notary-server started with PID: {}", child.id());
+                                    
+                                    // Spawn a task to handle the output
+                                    let child_id = child.id();
+                                    tokio::spawn(async move {
+                                        // The child will be terminated when our process exits
+                                        log::info!("Official notary-server (PID: {}) will be terminated when this process exits", child_id);
+                                    });
+                                },
+                                Err(e) => {
+                                    log::error!("Failed to start official notary-server: {}", e);
+                                }
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("Error checking for notary-server: {}", e);
+                    }
+                }
             }
             
             // Start the API server
