@@ -3,22 +3,20 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Empty, Full};
 use hyper::{Request, Uri};
 use hyper_util::rt::{TokioIo, TokioExecutor};
-use hyper_util::client::legacy::Client as HyperClient;
-use hyper_util::client::legacy::connect::HttpConnector;
 use log::{debug, info, warn, error};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::SocketAddr, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
+use notary_client::{Accepted, NotarizationRequest, NotaryClient};
 use tlsn_common::config::ProtocolConfig;
 use tlsn_core::transcript::Idx;
 use tlsn_core::CryptoProvider;
 use tlsn_prover::{state::Prove, Prover, ProverConfig};
-use tokio::net::TcpStream;
 use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 
 // Constants
-const MAX_SENT_DATA: usize = 1 << 16; // 64KB
-const MAX_RECV_DATA: usize = 1 << 20; // 1MB
+const MAX_SENT_DATA: usize = 1 << 12; // 4KB - reduced from 64KB for better performance
+const MAX_RECV_DATA: usize = 1 << 16; // 64KB - reduced from 1MB for better performance
 const DEFAULT_MPC_TIMEOUT_SECS: u64 = 300; // Default MPC timeout - Fallback if API unavailable (5 minutes)
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
 
@@ -43,17 +41,20 @@ fn get_crypto_provider() -> CryptoProvider {
     CryptoProvider::default()
 }
 
-/// Fetches MPC parameters from the notary API
+/// Fetches MPC parameters from the notary API - used as a fallback if NotaryClient fails
 async fn fetch_mpc_params(host: &str, api_port: u16) -> Result<MpcParams, ProverError> {
-    // Create the client 
-    let http_connector = HttpConnector::new();
-    let client: HyperClient<HttpConnector, Full<Bytes>> = HyperClient::builder(TokioExecutor::new())
-        .build(http_connector);
-    
     // Build the request URL
     let url = format!("http://{}:{}/api/mpcparams", host, api_port);
     let uri = Uri::from_str(&url)
         .map_err(|e| ProverError::ConfigError(format!("Invalid URL: {}", e)))?;
+    
+    // Create and send the request using hyper client directly
+    use hyper_util::client::legacy::Client as HyperClient;
+    use hyper_util::client::legacy::connect::HttpConnector;
+    
+    let http_connector = HttpConnector::new();
+    let client: HyperClient<HttpConnector, Full<Bytes>> = HyperClient::builder(TokioExecutor::new())
+        .build(http_connector);
     
     // Create and send the request
     info!("Fetching MPC parameters from {}", url);
@@ -127,48 +128,51 @@ impl TlsnProver {
                 ProverError::RequestError("Failed to resolve hostname".to_string())
             })?;
             
-        // Connect to notary
-        info!("FLOW: [1/10] Connecting to notary at {}:{}", self.notary_host, self.notary_port);
-        let notary_addr = SocketAddr::from(([127, 0, 0, 1], self.notary_port));
-        let notary_socket = TcpStream::connect(notary_addr)
+        // Build NotaryClient
+        info!("FLOW: [1/10] Setting up NotaryClient for {}:{}", self.notary_host, self.notary_port);
+        let notary_client = NotaryClient::builder()
+            .host(&self.notary_host)
+            .port(self.notary_port)
+            .enable_tls(false) // We're connecting locally without TLS
+            .build()
+            .map_err(|e| {
+                ProverError::ConfigError(format!("Failed to build NotaryClient: {}", e))
+            })?;
+            
+        // Set up notarization request with smaller buffer sizes
+        info!("FLOW: [2/10] Creating notarization request with optimized buffer sizes");
+        let notarization_request = NotarizationRequest::builder()
+            .max_sent_data(MAX_SENT_DATA)
+            .max_recv_data(MAX_RECV_DATA)
+            .build()
+            .map_err(|e| {
+                ProverError::ConfigError(format!("Failed to build notarization request: {}", e))
+            })?;
+            
+        // Request notarization from the notary server
+        info!("FLOW: [3/10] Requesting notarization from notary");
+        let Accepted {
+            id: session_id,
+            io: notary_connection,
+        } = notary_client
+            .request_notarization(notarization_request)
             .await
             .map_err(|e| {
-                ProverError::TlsnConnectionError(format!(
-                    "Failed to connect to notary: {}", e
-                ))
+                error!("Failed to connect to notary: {:?}", e);
+                ProverError::TlsnConnectionError(format!("Failed to connect to notary: {}", e))
             })?;
-        
-        // Fetch MPC parameters from the notary API first to better configure our request
-        info!("FLOW: [2/10] Fetching MPC parameters from notary API");
-        let mpc_params = match fetch_mpc_params(&self.notary_host, self.notary_api_port).await {
-            Ok(params) => {
-                info!("Successfully fetched MPC parameters from notary API");
-                debug!("MPC params: max_sent={}, max_recv={}, timeout={}s", 
-                       params.max_sent_data, params.max_recv_data, params.timeout_seconds);
-                params
-            }
-            Err(e) => {
-                warn!("Failed to fetch MPC parameters: {}. Using defaults.", e);
-                MpcParams {
-                    max_sent_data: MAX_SENT_DATA,
-                    max_recv_data: MAX_RECV_DATA,
-                    timeout_seconds: DEFAULT_MPC_TIMEOUT_SECS,
-                    version: "1.0".to_string(),
-                    supported_features: vec!["selective_disclosure".to_string()],
-                }
-            }
-        };
+            
+        info!("Notarization session accepted with ID: {}", session_id);
                 
-        // Setup prover configuration with fetched parameters
-        info!("FLOW: [3/10] Setting up TLSNotary prover configuration");
-        info!("Protocol settings: max_sent_data={}, max_recv_data={}", 
-               mpc_params.max_sent_data, mpc_params.max_recv_data);
+        // Setup prover configuration
+        info!("FLOW: [4/10] Setting up TLSNotary prover configuration");
+        info!("Protocol settings: max_sent_data={}, max_recv_data={}", MAX_SENT_DATA, MAX_RECV_DATA);
         let prover_config = ProverConfig::builder()
             .server_name(server_domain)
             .protocol_config(
                 ProtocolConfig::builder()
-                    .max_sent_data(mpc_params.max_sent_data)
-                    .max_recv_data(mpc_params.max_recv_data)
+                    .max_sent_data(MAX_SENT_DATA)
+                    .max_recv_data(MAX_RECV_DATA)
                     .build()
                     .map_err(|e| {
                         error!("CONFIG ERROR: Invalid protocol config: {}", e);
@@ -183,12 +187,12 @@ impl TlsnProver {
             })?;
         
         // Create prover
-        info!("FLOW: [4/10] Creating prover instance");
+        info!("FLOW: [5/10] Creating prover instance");
         let prover = Prover::new(prover_config);
         
-        // Perform the setup phase with the notary
-        info!("FLOW: [5/10] Starting TLSNotary setup phase with notary");
-        let prover = match prover.setup(notary_socket.compat()).await {
+        // Perform the setup phase with the notary using the connection from NotaryClient
+        info!("FLOW: [6/10] Starting TLSNotary setup phase with notary");
+        let prover = match prover.setup(notary_connection.compat()).await {
             Ok(p) => {
                 info!("Setup phase completed successfully");
                 p
@@ -201,8 +205,8 @@ impl TlsnProver {
         };
         
         // Connect to the TLS server
-        info!("FLOW: [6/10] Connecting to target server: {}", server_addr);
-        let client_socket = match TcpStream::connect(socket_addr).await {
+        info!("FLOW: [7/10] Connecting to target server: {}", server_addr);
+        let client_socket = match tokio::net::TcpStream::connect(socket_addr).await {
             Ok(socket) => {
                 info!("Successfully connected to target server: {}", server_addr);
                 socket
@@ -214,7 +218,7 @@ impl TlsnProver {
         };
         
         // Pass server connection into the prover and get the MPC TLS connection back
-        info!("FLOW: [7/10] Establishing MPC TLS connection to target server");
+        info!("FLOW: [8/10] Establishing MPC TLS connection to target server");
         let (mpc_tls_connection, prover_future) = match prover.connect(client_socket.compat()).await {
             Ok(result) => {
                 info!("Successfully established MPC TLS connection to target server");
@@ -230,7 +234,7 @@ impl TlsnProver {
         };
         
         // Wrap the connection for use with hyper
-        info!("FLOW: [8/10] Preparing HTTP connection through MPC TLS");
+        info!("FLOW: [9/10] Preparing HTTP connection through MPC TLS");
         let mpc_tls_connection = TokioIo::new(mpc_tls_connection.compat());
         
         // Spawn the prover to run in the background
@@ -238,7 +242,7 @@ impl TlsnProver {
         let prover_task = tokio::spawn(prover_future);
         
         // Setup HTTP client
-        info!("FLOW: [9/10] Performing HTTP handshake through MPC TLS connection");
+        info!("FLOW: [10/10] Performing HTTP handshake through MPC TLS connection");
         let (mut request_sender, connection) = match hyper::client::conn::http1::handshake(mpc_tls_connection).await {
             Ok(result) => {
                 info!("HTTP handshake successful");
@@ -293,7 +297,7 @@ impl TlsnProver {
             .map_err(|e| ProverError::RequestError(format!("Failed to build request: {}", e)))?;
         
         // Send the request and wait for response
-        info!("FLOW: [10/10] Sending {} request to {}", method, url);
+        info!("FLOW: Sending {} request to {}", method, url);
         let response = request_sender
             .send_request(request)
             .await

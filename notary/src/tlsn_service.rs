@@ -20,8 +20,8 @@ use crate::db::Database;
 pub const MPC_TIMEOUT_SECS: u64 = 300; // 5 minutes
 
 // Maximum transcript sizes
-pub const MAX_SENT_DATA: usize = 1 << 16; // 64KB
-pub const MAX_RECV_DATA: usize = 1 << 20; // 1MB
+pub const MAX_SENT_DATA: usize = 1 << 12; // 4KB - reduced from 64KB for better performance
+pub const MAX_RECV_DATA: usize = 1 << 16; // 64KB - reduced from 1MB for better performance
 
 // TLSNotary protocol version
 pub const TLSN_VERSION: &str = "1.0";
