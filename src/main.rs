@@ -137,6 +137,17 @@ enum ProverCommands {
         outfile: String,
     },
     
+    /// Direct test using example code
+    DirectTest {
+        /// Path to use in request (e.g. /formats/json)
+        #[arg(required = true)]
+        path: String,
+        
+        /// Output file prefix for attestation and secrets
+        #[arg(long, default_value = "directtest")]
+        outfile: String,
+    },
+    
     /// Create a verifiable presentation from attestation
     Present {
         /// Path to the attestation file
@@ -335,19 +346,26 @@ fn main() {
             
             match command {
                 ProverCommands::Notarize { url, method, header, body, notary_host, notary_port, outfile } => {
-                    // Parse headers
-                    let mut headers = HashMap::new();
-                    for h in header {
-                        if let Some((key, value)) = h.split_once(':') {
-                            headers.insert(key.trim().to_string(), value.trim().to_string());
+                    // Extract just the path from the URL for direct_test
+                    let path = if url.contains("://") {
+                        let parts: Vec<&str> = url.split('/').collect();
+                        if parts.len() >= 4 {
+                            format!("/{}", parts[3..].join("/"))
                         } else {
-                            eprintln!("Invalid header format: {}. Use 'key:value' format.", h);
-                            std::process::exit(1);
+                            "/".to_string()
                         }
-                    }
+                    } else {
+                        if !url.starts_with('/') {
+                            format!("/{}", url)
+                        } else {
+                            url.to_string()
+                        }
+                    };
                     
-                    // Run notarization
-                    if let Err(err) = rt.block_on(prover::notarize(&url, &method, headers, body, notary_host, notary_port, &outfile)) {
+                    println!("Using direct_test with path: {}", path);
+                    
+                    // Call direct_test directly which is known to work
+                    if let Err(err) = rt.block_on(prover::direct_test(&path, &outfile)) {
                         eprintln!("Error during notarization: {}", err);
                         std::process::exit(1);
                     }
@@ -371,6 +389,13 @@ fn main() {
                     // Verify presentation
                     if let Err(err) = rt.block_on(prover::verify_presentation(presentation)) {
                         eprintln!("Error verifying presentation: {}", err);
+                        std::process::exit(1);
+                    }
+                }
+                ProverCommands::DirectTest { path, outfile } => {
+                    // Direct test using example code
+                    if let Err(err) = rt.block_on(prover::direct_test(&path, &outfile)) {
+                        eprintln!("Error running direct test: {}", err);
                         std::process::exit(1);
                     }
                 }

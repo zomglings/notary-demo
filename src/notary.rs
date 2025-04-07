@@ -253,6 +253,12 @@ pub fn configure(
         notary_public_key_path
     };
 
+    // These values should match the prover.rs constants
+    // MAX_SENT_DATA = 1 << 12; // 4KB 
+    // MAX_RECV_DATA = 1 << 14; // 16KB
+    let max_sent_data = 4096;  // 4KB (1 << 12)
+    let max_recv_data = 16384; // 16KB (1 << 14)
+
     // Create the config file content using the TLSNotary server's expected format
     let config_content = format!(r#"---
 server:
@@ -262,8 +268,8 @@ server:
   html_info: ""
 
 notarization:
-  max_sent_data: 16384 # 16KB
-  max_recv_data: 262144 # 256KB
+  max_sent_data: {} # 4KB
+  max_recv_data: {} # 16KB
   timeout: 1800
 
 authorization:
@@ -286,6 +292,8 @@ notary_key:
 "#, 
     host, 
     port, 
+    max_sent_data,
+    max_recv_data,
     tls_enabled,
     private_key_path_yaml,
     certificate_path_yaml,
