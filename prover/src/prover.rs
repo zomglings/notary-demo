@@ -3,7 +3,7 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Empty, Full};
 use hyper::{Request, Uri};
 use hyper_util::rt::{TokioIo, TokioExecutor};
-use log::{debug, info, warn, error};
+use log::{debug, info, error};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr};
 
@@ -154,6 +154,7 @@ impl TlsnProver {
         let Accepted {
             id: session_id,
             io: notary_connection,
+            ..
         } = notary_client
             .request_notarization(notarization_request)
             .await
