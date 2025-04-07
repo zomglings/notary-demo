@@ -29,14 +29,27 @@ This project uses a hybrid architecture with two servers:
 
 ## Setup and Installation
 
-### 1. Start Our Server
+### 1. Start the Official Notary Server
+
+First, install and run the official notary-server on port 7047:
 
 ```bash
-# This single command starts both our API server and the official notary-server
-cargo run --bin notary -- server -H 127.0.0.1 --api-port 7048 --use-official-notary
+# Install the notary-server if not already installed
+cargo install --git https://github.com/tlsnotary/tlsn.git notary-server
+
+# Run the notary-server in a terminal
+notary-server --port 7047 --verbose
 ```
 
-### 2. Run the Prover Client
+### 2. Start Our API Server
+
+In a separate terminal, start our API server:
+
+```bash
+cargo run --bin notary -- server -H 127.0.0.1 --api-port 7048
+```
+
+### 3. Run the Prover Client
 
 ```bash
 cargo run --bin prover -- -v notarize https://example.com \

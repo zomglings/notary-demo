@@ -4,18 +4,23 @@ use notary::db::{Database, DatabaseError};
 use notary::tlsn_service::TlsnService;
 use std::net::TcpListener;
 use std::path::Path;
+use std::io;
+use clap::Parser;
+
+// We need to wrap our error types to make handling easier
+type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse command-line arguments
-    let cli = Cli::parse_args();
+async fn main() -> AppResult<()> {
+    // Parse command-line arguments directly using clap
+    let cli = Cli::parse();
     
-    match cli.command {
+    let result = match cli.command {
         Commands::Server { 
             host, 
             api_port,
             notary_port,
-            use_official_notary,
+            use_custom_mpc,
             database, 
             log_level,
             pretty_logging 
@@ -62,8 +67,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let proofs = database.list_all_proofs()?;
             log::info!("Found {} existing notarized proofs", proofs.len());
             
-            // Start the TLSNotary service in a separate task if not using official notary
-            if !use_official_notary && notary_port > 0 {
+            // Start our custom TLSNotary service if using custom MPC
+            if use_custom_mpc && notary_port > 0 {
                 let notary_host = host.clone();
                 let notary_database = database.clone();
                 tokio::spawn(async move {
@@ -72,41 +77,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         log::error!("TLSNotary service error: {}", e);
                     }
                 });
-                log::info!("TLSNotary service started on {}:{}", host, notary_port);
+                log::info!("Custom TLSNotary service started on {}:{}", host, notary_port);
             } else {
-                // Start the official notary-server directly using cargo run
-                log::info!("Starting official notary-server on port 7047...");
-                
-                // Run the official notary server using cargo run
-                let child = std::process::Command::new("cargo")
-                    .args(&[
-                        "run", 
-                        "--quiet",
-                        "--package", "notary-server",
-                        "--",
-                        "--port", "7047"
-                    ])
-                    .current_dir(std::env::current_dir().unwrap())
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped())
-                    .spawn();
-                    
-                match child {
-                    Ok(child) => {
-                        log::info!("Official notary-server started with PID: {}", child.id());
-                        
-                        // Spawn a task to handle the output
-                        let child_id = child.id();
-                        tokio::spawn(async move {
-                            // The child will be terminated when our process exits
-                            log::info!("Official notary-server (PID: {}) will be terminated when this process exits", child_id);
-                        });
-                    },
-                    Err(e) => {
-                        log::error!("Failed to start official notary-server: {}", e);
-                        log::warn!("Will continue without official notary server. Make sure it's installed and started separately.");
-                    }
-                }
+                log::info!("Using external notary-server. Make sure it's running on port 7047.");
             }
             
             // Start the API server
@@ -118,19 +91,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             log::info!("Server started successfully. Press Ctrl+C to stop.");
             
-            server.run_until_stopped().await?;
+            server.run_until_stopped().await
         },
         
         Commands::List { database, format } => {
-            // Initialize database connection
-            let db = Database::new(&database)?;
+            // Use map_err to convert DatabaseError to io::Error
+            let db = Database::new(&database).map_err(|e| {
+                io::Error::new(io::ErrorKind::Other, format!("Database error: {}", e))
+            })?;
             
             // Get all proofs
-            let proofs = db.list_all_proofs()?;
+            let proofs = db.list_all_proofs().map_err(|e| {
+                io::Error::new(io::ErrorKind::Other, format!("Database error: {}", e))
+            })?;
             
             if format == "json" {
                 // Output as JSON
-                let json = serde_json::to_string_pretty(&proofs)?;
+                let json = serde_json::to_string_pretty(&proofs).map_err(|e| {
+                    io::Error::new(io::ErrorKind::Other, format!("JSON error: {}", e))
+                })?;
                 println!("{}", json);
             } else {
                 // Output as text
@@ -146,18 +125,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+            Ok(())
         },
         
         Commands::Show { proof_id, database, format } => {
             // Initialize database connection
-            let db = Database::new(&database)?;
+            let db = Database::new(&database).map_err(|e| {
+                io::Error::new(io::ErrorKind::Other, format!("Database error: {}", e))
+            })?;
             
             // Get the proof
             match db.get_proof_by_id(&proof_id) {
                 Ok(proof) => {
                     if format == "json" {
                         // Output as JSON
-                        let json = serde_json::to_string_pretty(&proof)?;
+                        let json = serde_json::to_string_pretty(&proof).map_err(|e| {
+                            io::Error::new(io::ErrorKind::Other, format!("JSON error: {}", e))
+                        })?;
                         println!("{}", json);
                     } else {
                         // Output as text
@@ -170,42 +154,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Try to pretty-print the JSON
                         match serde_json::from_str::<serde_json::Value>(&proof.proof_json) {
                             Ok(value) => {
-                                println!("{}", serde_json::to_string_pretty(&value)?);
+                                let pretty = serde_json::to_string_pretty(&value).map_err(|e| {
+                                    io::Error::new(io::ErrorKind::Other, format!("JSON error: {}", e))
+                                })?;
+                                println!("{}", pretty);
                             },
                             Err(_) => {
                                 println!("{}", proof.proof_json);
                             }
                         }
                     }
+                    Ok(())
                 },
                 Err(DatabaseError::ProofNotFound(_)) => {
                     eprintln!("Error: Proof with ID '{}' not found", proof_id);
                     std::process::exit(1);
                 },
                 Err(e) => {
-                    eprintln!("Error retrieving proof: {}", e);
-                    std::process::exit(1);
+                    Err(io::Error::new(io::ErrorKind::Other, format!("Database error: {}", e)))
                 }
             }
         },
         
         Commands::Submit { domain, json, database } => {
             // Initialize database connection
-            let db = Database::new(&database)?;
+            let db = Database::new(&database).map_err(|e| {
+                io::Error::new(io::ErrorKind::Other, format!("Database error: {}", e))
+            })?;
             
             // Insert the proof
             match db.insert_proof(&domain, &json) {
                 Ok(id) => {
                     println!("Proof submitted successfully!");
                     println!("UUID: {}", id);
+                    Ok(())
                 },
                 Err(e) => {
-                    eprintln!("Error submitting proof: {}", e);
-                    std::process::exit(1);
+                    Err(io::Error::new(io::ErrorKind::Other, format!("Database error: {}", e)))
                 }
             }
         }
-    }
-    
-    Ok(())
+    };
+
+    // Convert whatever error type we have into a boxed dyn Error
+    result.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
 }

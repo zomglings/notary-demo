@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, arg};
 
 /// TLSNotary server command-line interface
 ///
@@ -26,9 +26,9 @@ pub enum Commands {
         #[arg(long, default_value = "0")]
         notary_port: u16,
         
-        /// Use official notary-server implementation instead of our custom MPC
-        #[arg(long, default_value = "true")]
-        use_official_notary: bool,
+        /// Use custom MPC protocol (otherwise assume official notary-server is running separately)
+        #[arg(long, default_value = "false")]
+        use_custom_mpc: bool,
 
         /// Path to the SQLite database file
         #[arg(short, long, default_value = "notary_proofs.db")]
