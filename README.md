@@ -43,17 +43,25 @@ This command:
 
 ### Step 2: Generate Signing Keys
 
-Generate ECDSA P-256 key pair for the notary server:
+Generate ECDSA key pair for the notary server:
 
 ```sh
-# Generate ECDSA P-256 keys for the notary server
+# Generate ECDSA P-256 keys (default)
 stamp notary keygen --private-key=/path/to/notary.key --public-key=/path/to/notary.pub
+
+# Generate ECDSA P-256 keys explicitly
+stamp notary keygen --private-key=/path/to/notary.key --public-key=/path/to/notary.pub --curve p256
+
+# Generate ECDSA secp256k1 keys
+stamp notary keygen --private-key=/path/to/notary.key --public-key=/path/to/notary.pub --curve secp256k1
 ```
 
 This command:
-- Creates a new ECDSA P-256 key pair
+- Creates a new ECDSA key pair using the specified elliptic curve (P-256 by default or secp256k1)
 - Saves the private key in PEM format to the specified path
 - Saves the public key in PEM format to the specified path
+
+Note: Use secp256k1 curve if you need compatibility with certain TLSNotary prover clients.
 
 ### Step 3: Create a Configuration File
 
