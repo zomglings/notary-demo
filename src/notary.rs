@@ -99,11 +99,42 @@ pub fn configure(
     host: Option<String>,
     port: Option<u16>,
     tls_enabled: Option<bool>,
+    tls_cert: Option<PathBuf>,
+    tls_key: Option<PathBuf>,
 ) -> Result<(), Box<dyn Error>> {
     // Default configuration values
     let host = host.unwrap_or_else(|| "0.0.0.0".to_string());
     let port = port.unwrap_or(7047);
     let tls_enabled = tls_enabled.unwrap_or(false);
+    
+    // Default certificate and key paths
+    let default_cert_path = "fixture/notary/notary.crt";
+    let default_key_path = "fixture/notary/notary.key";
+    
+    // If TLS is enabled, make sure we have valid cert and key paths
+    if tls_enabled {
+        if tls_cert.is_none() && tls_key.is_none() {
+            println!("Warning: TLS is enabled but no certificate or key paths provided.");
+            println!("Using default paths: cert={}, key={}", default_cert_path, default_key_path);
+        } else if tls_cert.is_none() {
+            println!("Warning: TLS is enabled but no certificate path provided.");
+            println!("Using default certificate path: {}", default_cert_path);
+        } else if tls_key.is_none() {
+            println!("Warning: TLS is enabled but no key path provided.");
+            println!("Using default key path: {}", default_key_path);
+        }
+    }
+    
+    // Use provided paths or defaults
+    let cert_path = match tls_cert {
+        Some(path) => path.to_string_lossy().to_string(),
+        None => default_cert_path.to_string(),
+    };
+    
+    let key_path = match tls_key {
+        Some(path) => path.to_string_lossy().to_string(),
+        None => default_key_path.to_string(),
+    };
 
     // Create the config file content
     let config_content = format!(r#"---
@@ -127,9 +158,9 @@ logging:
 
 tls:
   enabled: {}
-  private_key: "fixture/notary/notary.key"
-  certificate: "fixture/notary/notary.crt"
-"#, host, port, tls_enabled);
+  private_key: "{}"
+  certificate: "{}"
+"#, host, port, tls_enabled, key_path, cert_path);
 
     // Create parent directories if they don't exist
     if let Some(parent) = outfile.parent() {
