@@ -65,13 +65,9 @@ enum NotaryCommands {
         #[arg(long)]
         tls_enabled: Option<bool>,
         
-        /// Path to the TLS certificate file (required if tls-enabled is true)
+        /// Path to a directory containing certificates to copy (should contain notary.crt and notary.key)
         #[arg(long)]
-        tls_cert: Option<PathBuf>,
-        
-        /// Path to the TLS private key file (required if tls-enabled is true)
-        #[arg(long)]
-        tls_key: Option<PathBuf>,
+        certs_dir: Option<PathBuf>,
     },
     /// Run a TLSNotary server
     Serve {
@@ -123,9 +119,9 @@ fn main() {
                         std::process::exit(1);
                     }
                 }
-                NotaryCommands::Configure { outfile, host, port, tls_enabled, tls_cert, tls_key } => {
+                NotaryCommands::Configure { outfile, host, port, tls_enabled, certs_dir } => {
                     // Generate notary server configuration
-                    if let Err(err) = notary::configure(outfile, host, port, tls_enabled, tls_cert, tls_key) {
+                    if let Err(err) = notary::configure(outfile, host, port, tls_enabled, certs_dir) {
                         eprintln!("Error generating configuration: {}", err);
                         std::process::exit(1);
                     }

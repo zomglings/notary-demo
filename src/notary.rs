@@ -99,44 +99,51 @@ pub fn configure(
     host: Option<String>,
     port: Option<u16>,
     tls_enabled: Option<bool>,
-    tls_cert: Option<PathBuf>,
-    tls_key: Option<PathBuf>,
+    certs_dir: Option<PathBuf>,
 ) -> Result<(), Box<dyn Error>> {
     // Default configuration values
     let host = host.unwrap_or_else(|| "0.0.0.0".to_string());
     let port = port.unwrap_or(7047);
     let tls_enabled = tls_enabled.unwrap_or(false);
     
-    // Default certificate and key paths
-    let default_cert_path = "fixture/notary/notary.crt";
-    let default_key_path = "fixture/notary/notary.key";
+    // The paths expected by the notary server
+    let expected_fixture_dir = "fixture/notary";
+    let expected_cert_path = "fixture/notary/notary.crt";
+    let expected_key_path = "fixture/notary/notary.key";
     
-    // If TLS is enabled, make sure we have valid cert and key paths
-    if tls_enabled {
-        if tls_cert.is_none() && tls_key.is_none() {
-            println!("Warning: TLS is enabled but no certificate or key paths provided.");
-            println!("Using default paths: cert={}, key={}", default_cert_path, default_key_path);
-        } else if tls_cert.is_none() {
-            println!("Warning: TLS is enabled but no certificate path provided.");
-            println!("Using default certificate path: {}", default_cert_path);
-        } else if tls_key.is_none() {
-            println!("Warning: TLS is enabled but no key path provided.");
-            println!("Using default key path: {}", default_key_path);
+    // If TLS is enabled and certificates are provided, copy them to the expected location
+    if tls_enabled && certs_dir.is_some() {
+        let certs_directory = certs_dir.unwrap();
+        println!("TLS is enabled, copying certificates from: {}", certs_directory.display());
+        
+        // Check if the source files exist
+        let src_cert = certs_directory.join("notary.crt");
+        let src_key = certs_directory.join("notary.key");
+        
+        if !src_cert.exists() || !src_key.exists() {
+            return Err(format!(
+                "Certificate files not found. The certificate directory should contain 'notary.crt' and 'notary.key'. Looking for: {} and {}",
+                src_cert.display(), src_key.display()
+            ).into());
         }
+        
+        // Create the destination directory
+        fs::create_dir_all(expected_fixture_dir)?;
+        
+        // Copy the certificate files
+        println!("Copying certificate to: {}", expected_cert_path);
+        fs::copy(&src_cert, expected_cert_path)?;
+        
+        println!("Copying private key to: {}", expected_key_path);
+        fs::copy(&src_key, expected_key_path)?;
+    } else if tls_enabled {
+        println!("TLS is enabled, using default certificate paths.");
+        println!("Make sure the certificate files exist at:");
+        println!("  {}", expected_cert_path);
+        println!("  {}", expected_key_path);
     }
-    
-    // Use provided paths or defaults
-    let cert_path = match tls_cert {
-        Some(path) => path.to_string_lossy().to_string(),
-        None => default_cert_path.to_string(),
-    };
-    
-    let key_path = match tls_key {
-        Some(path) => path.to_string_lossy().to_string(),
-        None => default_key_path.to_string(),
-    };
 
-    // Create the config file content
+    // Create the config file content with the standard paths expected by the server
     let config_content = format!(r#"---
 server:
   name: "notary-server"
@@ -158,9 +165,9 @@ logging:
 
 tls:
   enabled: {}
-  private_key: "{}"
-  certificate: "{}"
-"#, host, port, tls_enabled, key_path, cert_path);
+  private_key: "fixture/notary/notary.key"
+  certificate: "fixture/notary/notary.crt"
+"#, host, port, tls_enabled);
 
     // Create parent directories if they don't exist
     if let Some(parent) = outfile.parent() {
